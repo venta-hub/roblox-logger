@@ -1,4 +1,4 @@
--- Join/Leave/Chat/Announcement Logger + Credits Viewer + Free Camera (v16, server version)
+-- Join/Leave/Chat/Announcement Logger + Credits Viewer + Free Camera (v17, server version)
 -- After the key is accepted, the Logger Panel opens (Right Ctrl hides/shows it unless you change
 -- the key): put your own Discord webhooks in it (one box per log type), switch each channel on/off,
 -- control the free camera, change keybinds, or terminate the whole script. Logs go through the Cloudflare Worker, which checks the key on every log and only
@@ -321,7 +321,18 @@ local function main()
 	local settings = readJson(SETTINGS_FILE)
 	if type(settings.enabled) ~= "table" then settings.enabled = {} end
 	-- keybinds (KeyCode names), all changeable in the Logger Panel
-	local KEY_DEFAULTS = { flyKey = "P", panelKey = "RightControl", creditsKey = "LeftControl" }
+	local KEY_DEFAULTS = {
+		panelKey = "RightControl",
+		creditsKey = "LeftControl",
+		flyKey = "P",
+		flyForward = "W",
+		flyBack = "S",
+		flyLeft = "A",
+		flyRight = "D",
+		flyUp = "E",
+		flyDown = "Q",
+		flyFast = "LeftShift",
+	}
 	for name, default in pairs(KEY_DEFAULTS) do
 		local value = settings[name]
 		if type(value) ~= "string" or not pcall(function() return Enum.KeyCode[value] end) then
@@ -1353,7 +1364,7 @@ local function main()
 	---------------------------------------------------------------- free camera
 	-- Press the fly key (P unless you change it in the Logger Panel) or use the panel's Fly toggle
 	-- to fly the camera anywhere on the map while your character stays put.
-	-- WASD to move, E/Space up, Q down, hold right mouse to look around,
+	-- WASD to move, E up, Q down (all changeable in the panel), hold right mouse to look around,
 	-- Shift to go faster, scroll to change speed, fly key again to snap back to your character.
 	local freecam = {
 		onChange = nil, -- the panel sets this so its Fly toggle follows the key
@@ -1364,10 +1375,12 @@ local function main()
 		local ContextActionService = game:GetService("ContextActionService")
 
 		local LOOK_SPEED = 0.005 -- radians per pixel of mouse movement
-		local MOVE_KEYS = {
-			Enum.KeyCode.W, Enum.KeyCode.A, Enum.KeyCode.S, Enum.KeyCode.D,
-			Enum.KeyCode.E, Enum.KeyCode.Q, Enum.KeyCode.Space,
-			Enum.KeyCode.LeftShift, Enum.KeyCode.Up, Enum.KeyCode.Down, Enum.KeyCode.Left, Enum.KeyCode.Right,
+		-- the fly controls (all changeable in the Logger Panel's keybinds)
+		local FLY_CONTROLS = { "flyForward", "flyBack", "flyLeft", "flyRight", "flyUp", "flyDown", "flyFast" }
+		-- Roblox's own walk/jump keys, swallowed while flying so your character stays still
+		local CHARACTER_KEYS = {
+			Enum.KeyCode.W, Enum.KeyCode.A, Enum.KeyCode.S, Enum.KeyCode.D, Enum.KeyCode.Space,
+			Enum.KeyCode.Up, Enum.KeyCode.Down, Enum.KeyCode.Left, Enum.KeyCode.Right,
 		}
 
 		local flying = false
@@ -1375,7 +1388,20 @@ local function main()
 		local position, pitch, yaw
 		local saved -- the camera settings to put back afterwards
 
-		local function down(key) return UserInputService:IsKeyDown(key) end
+		-- is the key set for this fly control held down?
+		local function down(control) return UserInputService:IsKeyDown(Enum.KeyCode[settings[control]]) end
+
+		-- swallows the character keys plus the current fly keys, so nothing else reacts to them
+		local function sinkKeys()
+			ContextActionService:UnbindAction("LoggerFreecam")
+			local keys = table.clone(CHARACTER_KEYS)
+			for _, control in ipairs(FLY_CONTROLS) do
+				table.insert(keys, Enum.KeyCode[settings[control]])
+			end
+			ContextActionService:BindActionAtPriority("LoggerFreecam", function()
+				return Enum.ContextActionResult.Sink
+			end, false, Enum.ContextActionPriority.High.Value + 1, table.unpack(keys))
+		end
 
 		local function update(dt)
 			local camera = workspace.CurrentCamera
@@ -1392,18 +1418,18 @@ local function main()
 			end
 
 			local move = Vector3.zero
-			if down(Enum.KeyCode.W) or down(Enum.KeyCode.Up) then move += Vector3.new(0, 0, -1) end
-			if down(Enum.KeyCode.S) or down(Enum.KeyCode.Down) then move += Vector3.new(0, 0, 1) end
-			if down(Enum.KeyCode.A) or down(Enum.KeyCode.Left) then move += Vector3.new(-1, 0, 0) end
-			if down(Enum.KeyCode.D) or down(Enum.KeyCode.Right) then move += Vector3.new(1, 0, 0) end
+			if down("flyForward") then move += Vector3.new(0, 0, -1) end
+			if down("flyBack") then move += Vector3.new(0, 0, 1) end
+			if down("flyLeft") then move += Vector3.new(-1, 0, 0) end
+			if down("flyRight") then move += Vector3.new(1, 0, 0) end
 			local rise = 0
-			if down(Enum.KeyCode.E) or down(Enum.KeyCode.Space) then rise += 1 end
-			if down(Enum.KeyCode.Q) then rise -= 1 end
+			if down("flyUp") then rise += 1 end
+			if down("flyDown") then rise -= 1 end
 
 			local rotation = CFrame.fromOrientation(pitch, yaw, 0)
 			local velocity = rotation:VectorToWorldSpace(move) + Vector3.new(0, rise, 0)
 			if velocity.Magnitude > 0 then
-				local boost = down(Enum.KeyCode.LeftShift) and 3 or 1
+				local boost = down("flyFast") and 3 or 1
 				position += velocity.Unit * speed * boost * dt
 			end
 
@@ -1432,10 +1458,7 @@ local function main()
 			saved = { type = camera.CameraType, subject = camera.CameraSubject, cframe = camera.CFrame }
 			position = camera.CFrame.Position
 			pitch, yaw = camera.CFrame:ToOrientation()
-			-- swallow the movement keys so your character doesn't walk while the camera flies
-			ContextActionService:BindActionAtPriority("LoggerFreecam", function()
-				return Enum.ContextActionResult.Sink
-			end, false, Enum.ContextActionPriority.High.Value + 1, table.unpack(MOVE_KEYS))
+			sinkKeys()
 			RunService:BindToRenderStep("LoggerFreecam", Enum.RenderPriority.Camera.Value + 1, update)
 		end
 
@@ -1444,6 +1467,10 @@ local function main()
 			if freecam.onChange then freecam.onChange(flying) end
 		end
 		function freecam.isOn() return flying end
+		-- called when a fly key is changed in the panel, so it works straight away mid-flight
+		function freecam.keysChanged()
+			if flying then sinkKeys() end
+		end
 
 		track(UserInputService.InputBegan:Connect(function(input, gameProcessed)
 			if gameProcessed or not alive or keybinds.listening then return end -- ignore chat typing
@@ -1737,7 +1764,7 @@ local function main()
 		end
 
 		new("TextLabel", {
-			Text = "WASD moves, E/Space up, Q down, hold right mouse to look, Shift is faster, scroll changes speed.",
+			Text = "Hold right mouse to look around, scroll to change speed. Movement keys are in KEYBINDS below.",
 			LayoutOrder = nextOrder(),
 			Size = UDim2.new(1, 0, 0, 30),
 			BackgroundTransparency = 1,
@@ -1756,6 +1783,13 @@ local function main()
 			{ name = "panelKey", text = "Open/close this panel" },
 			{ name = "creditsKey", text = "Open/close credits window" },
 			{ name = "flyKey", text = "Fly on/off" },
+			{ name = "flyForward", text = "Fly forward" },
+			{ name = "flyBack", text = "Fly back" },
+			{ name = "flyLeft", text = "Fly left" },
+			{ name = "flyRight", text = "Fly right" },
+			{ name = "flyUp", text = "Fly up" },
+			{ name = "flyDown", text = "Fly down" },
+			{ name = "flyFast", text = "Fly faster (hold)" },
 		}
 		local function keybindRow(bind)
 			local row = new("Frame", {
@@ -1805,6 +1839,7 @@ local function main()
 					else
 						settings[bind.name] = key
 						saveSettings()
+						freecam.keysChanged()
 						button.Text = key
 						print("[Logger] " .. bind.text .. " key set to " .. key)
 					end
@@ -1912,7 +1947,7 @@ local function main()
 		print("[Logger] Logger Panel open. " .. settings.panelKey .. " hides/shows it.")
 	end
 
-	print("[Logger] v16 running (logs + credits viewer + free camera + Logger Panel).")
+	print("[Logger] v17 running (logs + credits viewer + free camera + Logger Panel).")
 end
 
 local ok, err = xpcall(main, debug.traceback)
