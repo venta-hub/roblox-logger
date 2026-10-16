@@ -1,7 +1,7 @@
--- Join/Leave/Chat/Announcement Logger (v10, server version)
--- Logs are sent to your own Cloudflare Worker, which checks the key and then posts them to
--- Discord. The Discord webhook URLs live only on the Worker (see SETUP.md), never in this script,
--- so without a valid key nothing can reach Discord, whatever someone does to this script.
+-- Join/Leave/Chat/Announcement Logger (v11, server version)
+-- After the key is accepted, a Log Channels panel asks for your own Discord webhooks (one box per
+-- log type). Logs go through the Cloudflare Worker, which checks the key on every log and only
+-- forwards to Discord webhook URLs, so without a valid key nothing gets sent.
 local SERVER_URL = "https://logger.vanta-node-7.workers.dev" -- your Worker URL
 
 print("[Logger] Starting...")
@@ -54,29 +54,34 @@ local function main()
 		return (s:match("^%s*(.-)%s*$"))
 	end
 
-	-- sends JSON to the server, returns (statusCode, decodedBody) or (nil)
-	-- gives up after 15 seconds so a stuck request can't freeze the script
-	local function callServer(path, data)
+	-- runs an HTTP request, giving up after 15 seconds so a stuck request can't freeze the script
+	-- returns the response, or nil and a reason
+	local function httpRequest(options)
 		local done, ok, res = false, false, nil
 		task.spawn(function()
-			ok, res = pcall(function()
-				return request({
-					Url = SERVER_URL .. path,
-					Method = "POST",
-					Headers = { ["Content-Type"] = "application/json" },
-					Body = HttpService:JSONEncode(data),
-				})
-			end)
+			ok, res = pcall(request, options)
 			done = true
 		end)
 		local start = os.clock()
 		while not done and os.clock() - start < 15 do task.wait(0.1) end
-		if not done then
-			warn("[Logger] The key server didn't answer in time (" .. path .. ").")
+		if not done then return nil, "no answer in time" end
+		if not ok then return nil, tostring(res) end
+		if not res or not res.StatusCode then return nil, "empty response" end
+		return res
+	end
+
+	-- sends JSON to the server, returns (statusCode, decodedBody) or (nil)
+	local function callServer(path, data)
+		local res, reason = httpRequest({
+			Url = SERVER_URL .. path,
+			Method = "POST",
+			Headers = { ["Content-Type"] = "application/json" },
+			Body = HttpService:JSONEncode(data),
+		})
+		if not res then
+			warn("[Logger] Request to the key server failed (" .. path .. "):", reason)
 			return nil
 		end
-		if not ok then warn("[Logger] Request failed:", res) end
-		if not ok or not res or not res.StatusCode then return nil end
 		local okBody, body = pcall(function() return HttpService:JSONDecode(res.Body) end)
 		return res.StatusCode, okBody and body or {}
 	end
@@ -100,24 +105,40 @@ local function main()
 		pcall(function() if writefile then writefile(KEY_FILE, trim(key)) end end)
 	end
 
-	local function askForKey()
-		local TweenService = game:GetService("TweenService")
+	---------------------------------------------------------------- UI helpers
+	local TweenService = game:GetService("TweenService")
+
+	local function new(className, props)
+		local obj = Instance.new(className)
+		for k, v in pairs(props) do obj[k] = v end
+		return obj
+	end
+	local function round(obj, r) new("UICorner", { CornerRadius = UDim.new(0, r), Parent = obj }) end
+
+	-- makes a ScreenGui, replacing one with the same name left over from an earlier run
+	local function makeGui(name)
 		local gui = Instance.new("ScreenGui")
-		gui.Name = "LoggerKey"
+		gui.Name = name
 		gui.ResetOnSpawn = false
 		local okParent = pcall(function() gui.Parent = (gethui and gethui()) or game:GetService("CoreGui") end)
 		if not okParent or not gui.Parent then gui.Parent = Players.LocalPlayer:WaitForChild("PlayerGui") end
-		-- remove a key box left over from an earlier run
 		for _, old in ipairs(gui.Parent:GetChildren()) do
-			if old ~= gui and old.Name == "LoggerKey" then old:Destroy() end
+			if old ~= gui and old.Name == name then old:Destroy() end
 		end
+		return gui
+	end
 
-		local function new(className, props)
-			local obj = Instance.new(className)
-			for k, v in pairs(props) do obj[k] = v end
-			return obj
+	local function shake(frame)
+		local start = frame.Position
+		for _, x in ipairs({ -8, 8, -5, 5, 0 }) do
+			TweenService:Create(frame, TweenInfo.new(0.04), { Position = start + UDim2.fromOffset(x, 0) }):Play()
+			task.wait(0.04)
 		end
-		local function round(obj, r) new("UICorner", { CornerRadius = UDim.new(0, r), Parent = obj }) end
+		frame.Position = start
+	end
+
+	local function askForKey()
+		local gui = makeGui("LoggerKey")
 
 		local frame = new("Frame", {
 			Size = UDim2.fromOffset(320, 180),
@@ -202,13 +223,7 @@ local function main()
 			else
 				status.TextColor3 = Color3.fromRGB(240, 90, 90)
 				status.Text = reason
-				-- little shake on a wrong key
-				local start = frame.Position
-				for _, x in ipairs({ -8, 8, -5, 5, 0 }) do
-					TweenService:Create(frame, TweenInfo.new(0.04), { Position = start + UDim2.fromOffset(x, 0) }):Play()
-					task.wait(0.04)
-				end
-				frame.Position = start
+				shake(frame) -- little shake on a wrong key
 			end
 			checking = false
 		end
@@ -242,6 +257,221 @@ local function main()
 	end
 	print("[Logger] Key accepted.")
 
+	---------------------------------------------------------------- channels panel
+	-- Every time the script runs, a panel asks for your Discord webhooks: one box per log type.
+	-- They're saved to a file so the boxes are already filled in next time. Leave a box empty to
+	-- turn that log off (an empty Announcements box sends announcements to the chat channel).
+	local WEBHOOK_FILE = "logger_webhooks.json"
+	local CHANNELS = {
+		{ kind = "join", label = "Join logs" },
+		{ kind = "leave", label = "Leave logs" },
+		{ kind = "chat", label = "Chat logs" },
+		{ kind = "announcement", label = "Announcements (empty = chat channel)" },
+	}
+	local WEBHOOK_HOSTS = {
+		["discord.com"] = true,
+		["discordapp.com"] = true,
+		["canary.discord.com"] = true,
+		["ptb.discord.com"] = true,
+	}
+
+	local function isWebhook(url)
+		local host = url:match("^https://([%w%.]+)/api/webhooks/%d+/[%w_%-]+$")
+		return host ~= nil and WEBHOOK_HOSTS[host] == true
+	end
+
+	local function loadWebhooks()
+		local ok, saved = pcall(function()
+			return isfile and isfile(WEBHOOK_FILE) and HttpService:JSONDecode(readfile(WEBHOOK_FILE))
+		end)
+		return (ok and type(saved) == "table") and saved or {}
+	end
+
+	local function saveWebhooks(hooks)
+		pcall(function() if writefile then writefile(WEBHOOK_FILE, HttpService:JSONEncode(hooks)) end end)
+	end
+
+	-- asks Discord whether the webhook exists; returns (true) or (false, reason)
+	local function webhookWorks(url)
+		local res, reason = httpRequest({ Url = url, Method = "GET" })
+		if not res then return false, "couldn't reach Discord (" .. reason .. ")" end
+		if res.StatusCode == 200 then return true end
+		if res.StatusCode == 401 or res.StatusCode == 404 then return false, "that webhook was deleted or is wrong." end
+		return false, "Discord said " .. res.StatusCode
+	end
+
+	-- shows the panel and waits; returns { kind = url } for the filled-in boxes, or nil if closed
+	local function askForChannels()
+		local saved = loadWebhooks()
+		local gui = makeGui("LoggerChannels")
+
+		local ROW = 62
+		local listTop = 66
+		local buttonY = listTop + #CHANNELS * ROW + 4
+		local height = buttonY + 76
+		local frame = new("Frame", {
+			Size = UDim2.fromOffset(400, height),
+			Position = UDim2.new(0.5, -200, 0.5, -height / 2),
+			BackgroundColor3 = Color3.fromRGB(18, 18, 24),
+			Parent = gui,
+		})
+		round(frame, 14)
+		new("UIStroke", { Color = Color3.fromRGB(60, 60, 78), Thickness = 1.5, Parent = frame })
+		new("TextLabel", {
+			Text = "📡  Log Channels",
+			Size = UDim2.new(1, -60, 0, 30),
+			Position = UDim2.fromOffset(16, 10),
+			BackgroundTransparency = 1,
+			Font = Enum.Font.GothamBold,
+			TextSize = 17,
+			TextColor3 = Color3.fromRGB(240, 240, 245),
+			TextXAlignment = Enum.TextXAlignment.Left,
+			Parent = frame,
+		})
+		new("TextLabel", {
+			Text = "Paste a Discord webhook URL for each channel. Leave a box empty to turn it off.",
+			Size = UDim2.new(1, -32, 0, 20),
+			Position = UDim2.fromOffset(16, 38),
+			BackgroundTransparency = 1,
+			Font = Enum.Font.Gotham,
+			TextSize = 12,
+			TextColor3 = Color3.fromRGB(150, 150, 165),
+			TextXAlignment = Enum.TextXAlignment.Left,
+			TextWrapped = true,
+			Parent = frame,
+		})
+		local close = new("TextButton", {
+			Text = "×",
+			Size = UDim2.fromOffset(30, 30),
+			Position = UDim2.new(1, -40, 0, 12),
+			BackgroundColor3 = Color3.fromRGB(34, 34, 44),
+			Font = Enum.Font.GothamBold,
+			TextSize = 16,
+			TextColor3 = Color3.fromRGB(150, 150, 165),
+			Parent = frame,
+		})
+		round(close, 8)
+
+		local boxes = {}
+		for i, channel in ipairs(CHANNELS) do
+			local y = listTop + (i - 1) * ROW
+			new("TextLabel", {
+				Text = channel.label,
+				Size = UDim2.new(1, -32, 0, 18),
+				Position = UDim2.fromOffset(16, y),
+				BackgroundTransparency = 1,
+				Font = Enum.Font.GothamMedium,
+				TextSize = 13,
+				TextColor3 = Color3.fromRGB(210, 210, 220),
+				TextXAlignment = Enum.TextXAlignment.Left,
+				Parent = frame,
+			})
+			local box = new("TextBox", {
+				Text = type(saved[channel.kind]) == "string" and saved[channel.kind] or "",
+				PlaceholderText = "https://discord.com/api/webhooks/...",
+				PlaceholderColor3 = Color3.fromRGB(110, 110, 125),
+				ClearTextOnFocus = false,
+				ClipsDescendants = true,
+				Size = UDim2.new(1, -32, 0, 34),
+				Position = UDim2.fromOffset(16, y + 22),
+				BackgroundColor3 = Color3.fromRGB(28, 28, 36),
+				Font = Enum.Font.Gotham,
+				TextSize = 13,
+				TextColor3 = Color3.fromRGB(240, 240, 245),
+				TextXAlignment = Enum.TextXAlignment.Left,
+				Parent = frame,
+			})
+			round(box, 9)
+			new("UIPadding", { PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10), Parent = box })
+			boxes[channel.kind] = box
+		end
+
+		local start = new("TextButton", {
+			Text = "Save & Start",
+			Size = UDim2.new(1, -32, 0, 36),
+			Position = UDim2.fromOffset(16, buttonY),
+			BackgroundColor3 = Color3.fromRGB(255, 196, 64),
+			Font = Enum.Font.GothamBold,
+			TextSize = 14,
+			TextColor3 = Color3.fromRGB(30, 24, 10),
+			Parent = frame,
+		})
+		round(start, 9)
+		local status = new("TextLabel", {
+			Text = "",
+			Size = UDim2.new(1, -32, 0, 28),
+			Position = UDim2.fromOffset(16, buttonY + 40),
+			BackgroundTransparency = 1,
+			Font = Enum.Font.Gotham,
+			TextSize = 12,
+			TextWrapped = true,
+			TextColor3 = Color3.fromRGB(240, 90, 90),
+			Parent = frame,
+		})
+
+		local function fail(text)
+			status.TextColor3 = Color3.fromRGB(240, 90, 90)
+			status.Text = text
+			shake(frame)
+		end
+
+		local result -- nil while waiting, then the webhooks table, or false if closed
+		local checking = false
+		local function try()
+			local hooks, any = {}, false
+			for _, channel in ipairs(CHANNELS) do
+				local url = trim(boxes[channel.kind].Text)
+				if url ~= "" then
+					if not isWebhook(url) then
+						return fail(channel.label .. ": that isn't a Discord webhook URL.")
+					end
+					hooks[channel.kind] = url
+					any = true
+				end
+			end
+			if not any then return fail("Fill in at least one channel.") end
+
+			status.TextColor3 = Color3.fromRGB(150, 150, 165)
+			status.Text = "Checking webhooks..."
+			for _, channel in ipairs(CHANNELS) do
+				if hooks[channel.kind] then
+					local works, reason = webhookWorks(hooks[channel.kind])
+					if not works then return fail(channel.label .. ": " .. reason) end
+				end
+			end
+
+			saveWebhooks(hooks)
+			status.TextColor3 = Color3.fromRGB(80, 220, 120)
+			status.Text = "Saved! Logging started."
+			task.wait(0.6)
+			result = hooks
+		end
+		start.MouseButton1Click:Connect(function()
+			if checking then return end
+			checking = true
+			try()
+			checking = false
+		end)
+		close.MouseButton1Click:Connect(function() result = false end)
+
+		while result == nil and alive and gui.Parent do task.wait() end
+		gui:Destroy()
+		return result or nil
+	end
+
+	print("[Logger] Waiting for channels in the Log Channels panel...")
+	local WEBHOOKS = askForChannels()
+	if not WEBHOOKS then
+		warn("[Logger] Log Channels panel closed, logger not started.")
+		return
+	end
+	WEBHOOKS.announcement = WEBHOOKS.announcement or WEBHOOKS.chat
+	local enabled = {}
+	for _, channel in ipairs(CHANNELS) do
+		if WEBHOOKS[channel.kind] then table.insert(enabled, channel.kind) end
+	end
+	print("[Logger] Logging to Discord:", table.concat(enabled, ", "))
+
 	local gameName = "Unknown"
 	pcall(function()
 		gameName = MarketplaceService:GetProductInfo(game.PlaceId).Name
@@ -258,9 +488,17 @@ local function main()
 		end)
 	end
 
-	-- kind is "join", "leave", "chat" or "announcement"; the server picks the matching webhook
+	-- kind is "join", "leave", "chat" or "announcement"; sent to that channel's webhook from the panel
 	local function post(kind, payload)
-		local status, body = callServer("/log", { key = KEY, userId = Players.LocalPlayer.UserId, kind = kind, payload = payload })
+		local webhook = WEBHOOKS[kind]
+		if not webhook then return end -- this log is turned off in the panel
+		local status, body = callServer("/log", {
+			key = KEY,
+			userId = Players.LocalPlayer.UserId,
+			kind = kind,
+			webhook = webhook,
+			payload = payload,
+		})
 		if status == nil then
 			warn("[Logger] Couldn't reach the server.")
 		elseif status >= 400 then
@@ -310,6 +548,7 @@ local function main()
 
 	local function send(kind, title, color, player)
 		saveToFile(kind == "join" and "JOINED" or "LEFT", player)
+		if not WEBHOOKS[kind] then return end
 		fetchAvatars({ [player.UserId] = true })
 		local embed, profile = playerCard(title, color, player.UserId, player.DisplayName, player.Name)
 		table.insert(embed.fields, { name = "Account Age", value = player.AccountAge .. " days", inline = true })
@@ -373,6 +612,7 @@ local function main()
 		local chatQueue = {}
 
 		track(TextChatService.MessageReceived:Connect(function(msg)
+			if not WEBHOOKS.chat then return end -- chat logs are turned off
 			if not msg.TextSource then return end -- skip system messages
 			if not msg.Text or msg.Text == "" then return end
 			local userId = msg.TextSource.UserId
@@ -430,7 +670,7 @@ local function main()
 	-- Catches the on-screen "Message from <name>" popups (admin message commands) and logs
 	-- who sent it and what it said. It reads the popup from your own screen, so you only
 	-- catch announcements that are shown to you.
-	-- (If the Worker has no announcement webhook set, it sends these to the chat webhook instead.)
+	-- (If the Announcements box is empty, these go to the chat channel instead.)
 	do
 		local playerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
 		local recent = {} -- stops the same popup getting logged twice
@@ -485,6 +725,7 @@ local function main()
 		end
 
 		local function check(label)
+			if not WEBHOOKS.announcement then return end -- announcements are turned off
 			if busy[label] then return end
 			if not getSender(label.Text) then return end
 			busy[label] = true
@@ -550,7 +791,7 @@ local function main()
 		track(playerGui.DescendantAdded:Connect(watch))
 	end
 
-	print("[Logger] v10 running (server version: chat cards + translation + announcements).")
+	print("[Logger] v11 running (server version: chat cards + translation + announcements).")
 end
 
 local ok, err = xpcall(main, debug.traceback)
