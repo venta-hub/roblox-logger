@@ -1,6 +1,7 @@
--- Join/Leave/Chat/Announcement Logger + Credits Viewer + Free Camera (v14, server version)
--- After the key is accepted, a Log Channels panel asks for your own Discord webhooks (one box per
--- log type). Logs go through the Cloudflare Worker, which checks the key on every log and only
+-- Join/Leave/Chat/Announcement Logger + Credits Viewer + Free Camera (v15, server version)
+-- After the key is accepted, the Logger Panel opens (Right Ctrl hides/shows it): put your own
+-- Discord webhooks in it (one box per log type), switch each channel on/off, and control the free
+-- camera. Logs go through the Cloudflare Worker, which checks the key on every log and only
 -- forwards to Discord webhook URLs, so without a valid key nothing gets sent.
 local SERVER_URL = "https://logger.vanta-node-7.workers.dev" -- your Worker URL
 
@@ -257,16 +258,17 @@ local function main()
 	end
 	print("[Logger] Key accepted.")
 
-	---------------------------------------------------------------- channels panel
-	-- Every time the script runs, a panel asks for your Discord webhooks: one box per log type.
-	-- They're saved to a file so the boxes are already filled in next time. Leave a box empty to
-	-- turn that log off (an empty Announcements box sends announcements to the chat channel).
+	---------------------------------------------------------------- channels and settings
+	-- Your Discord webhooks (one per log type) and the on/off toggles are set in the Logger Panel
+	-- (built at the bottom of this script). Both are saved to files, so they're remembered next time.
+	-- An empty Announcements box sends announcements to the chat channel.
 	local WEBHOOK_FILE = "logger_webhooks.json"
+	local SETTINGS_FILE = "logger_settings.json"
 	local CHANNELS = {
 		{ kind = "join", label = "Join logs" },
 		{ kind = "leave", label = "Leave logs" },
 		{ kind = "chat", label = "Chat logs" },
-		{ kind = "announcement", label = "Announcements (empty = chat channel)" },
+		{ kind = "announcement", label = "Announcements" },
 	}
 	local WEBHOOK_HOSTS = {
 		["discord.com"] = true,
@@ -280,15 +282,15 @@ local function main()
 		return host ~= nil and WEBHOOK_HOSTS[host] == true
 	end
 
-	local function loadWebhooks()
-		local ok, saved = pcall(function()
-			return isfile and isfile(WEBHOOK_FILE) and HttpService:JSONDecode(readfile(WEBHOOK_FILE))
+	local function readJson(file)
+		local ok, data = pcall(function()
+			return isfile and isfile(file) and HttpService:JSONDecode(readfile(file))
 		end)
-		return (ok and type(saved) == "table") and saved or {}
+		return (ok and type(data) == "table") and data or {}
 	end
 
-	local function saveWebhooks(hooks)
-		pcall(function() if writefile then writefile(WEBHOOK_FILE, HttpService:JSONEncode(hooks)) end end)
+	local function writeJson(file, data)
+		pcall(function() if writefile then writefile(file, HttpService:JSONEncode(data)) end end)
 	end
 
 	-- asks Discord whether the webhook exists; returns (true) or (false, reason)
@@ -300,174 +302,36 @@ local function main()
 		return false, "Discord said " .. res.StatusCode
 	end
 
-	-- shows the panel and waits; returns { kind = url } for the filled-in boxes, or nil if closed
-	local function askForChannels()
-		local saved = loadWebhooks()
-		local gui = makeGui("LoggerChannels")
-
-		local ROW = 62
-		local listTop = 66
-		local buttonY = listTop + #CHANNELS * ROW + 4
-		local height = buttonY + 76
-		local frame = new("Frame", {
-			Size = UDim2.fromOffset(400, height),
-			Position = UDim2.new(0.5, -200, 0.5, -height / 2),
-			BackgroundColor3 = Color3.fromRGB(18, 18, 24),
-			Parent = gui,
-		})
-		round(frame, 14)
-		new("UIStroke", { Color = Color3.fromRGB(60, 60, 78), Thickness = 1.5, Parent = frame })
-		new("TextLabel", {
-			Text = "📡  Log Channels",
-			Size = UDim2.new(1, -60, 0, 30),
-			Position = UDim2.fromOffset(16, 10),
-			BackgroundTransparency = 1,
-			Font = Enum.Font.GothamBold,
-			TextSize = 17,
-			TextColor3 = Color3.fromRGB(240, 240, 245),
-			TextXAlignment = Enum.TextXAlignment.Left,
-			Parent = frame,
-		})
-		new("TextLabel", {
-			Text = "Paste a Discord webhook URL for each channel. Leave a box empty to turn it off.",
-			Size = UDim2.new(1, -32, 0, 20),
-			Position = UDim2.fromOffset(16, 38),
-			BackgroundTransparency = 1,
-			Font = Enum.Font.Gotham,
-			TextSize = 12,
-			TextColor3 = Color3.fromRGB(150, 150, 165),
-			TextXAlignment = Enum.TextXAlignment.Left,
-			TextWrapped = true,
-			Parent = frame,
-		})
-		local close = new("TextButton", {
-			Text = "×",
-			Size = UDim2.fromOffset(30, 30),
-			Position = UDim2.new(1, -40, 0, 12),
-			BackgroundColor3 = Color3.fromRGB(34, 34, 44),
-			Font = Enum.Font.GothamBold,
-			TextSize = 16,
-			TextColor3 = Color3.fromRGB(150, 150, 165),
-			Parent = frame,
-		})
-		round(close, 8)
-
-		local boxes = {}
-		for i, channel in ipairs(CHANNELS) do
-			local y = listTop + (i - 1) * ROW
-			new("TextLabel", {
-				Text = channel.label,
-				Size = UDim2.new(1, -32, 0, 18),
-				Position = UDim2.fromOffset(16, y),
-				BackgroundTransparency = 1,
-				Font = Enum.Font.GothamMedium,
-				TextSize = 13,
-				TextColor3 = Color3.fromRGB(210, 210, 220),
-				TextXAlignment = Enum.TextXAlignment.Left,
-				Parent = frame,
-			})
-			local box = new("TextBox", {
-				Text = type(saved[channel.kind]) == "string" and saved[channel.kind] or "",
-				PlaceholderText = "https://discord.com/api/webhooks/...",
-				PlaceholderColor3 = Color3.fromRGB(110, 110, 125),
-				ClearTextOnFocus = false,
-				ClipsDescendants = true,
-				Size = UDim2.new(1, -32, 0, 34),
-				Position = UDim2.fromOffset(16, y + 22),
-				BackgroundColor3 = Color3.fromRGB(28, 28, 36),
-				Font = Enum.Font.Gotham,
-				TextSize = 13,
-				TextColor3 = Color3.fromRGB(240, 240, 245),
-				TextXAlignment = Enum.TextXAlignment.Left,
-				Parent = frame,
-			})
-			round(box, 9)
-			new("UIPadding", { PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10), Parent = box })
-			boxes[channel.kind] = box
-		end
-
-		local start = new("TextButton", {
-			Text = "Save & Start",
-			Size = UDim2.new(1, -32, 0, 36),
-			Position = UDim2.fromOffset(16, buttonY),
-			BackgroundColor3 = Color3.fromRGB(255, 196, 64),
-			Font = Enum.Font.GothamBold,
-			TextSize = 14,
-			TextColor3 = Color3.fromRGB(30, 24, 10),
-			Parent = frame,
-		})
-		round(start, 9)
-		local status = new("TextLabel", {
-			Text = "",
-			Size = UDim2.new(1, -32, 0, 28),
-			Position = UDim2.fromOffset(16, buttonY + 40),
-			BackgroundTransparency = 1,
-			Font = Enum.Font.Gotham,
-			TextSize = 12,
-			TextWrapped = true,
-			TextColor3 = Color3.fromRGB(240, 90, 90),
-			Parent = frame,
-		})
-
-		local function fail(text)
-			status.TextColor3 = Color3.fromRGB(240, 90, 90)
-			status.Text = text
-			shake(frame)
-		end
-
-		local result -- nil while waiting, then the webhooks table, or false if closed
-		local checking = false
-		local function try()
-			local hooks = {} -- all boxes empty is fine: then only the credits viewer runs
-			for _, channel in ipairs(CHANNELS) do
-				local url = trim(boxes[channel.kind].Text)
-				if url ~= "" then
-					if not isWebhook(url) then
-						return fail(channel.label .. ": that isn't a Discord webhook URL.")
-					end
-					hooks[channel.kind] = url
-				end
-			end
-			status.TextColor3 = Color3.fromRGB(150, 150, 165)
-			status.Text = "Checking webhooks..."
-			for _, channel in ipairs(CHANNELS) do
-				if hooks[channel.kind] then
-					local works, reason = webhookWorks(hooks[channel.kind])
-					if not works then return fail(channel.label .. ": " .. reason) end
-				end
-			end
-
-			saveWebhooks(hooks)
-			status.TextColor3 = Color3.fromRGB(80, 220, 120)
-			status.Text = "Saved! Logging started."
-			task.wait(0.6)
-			result = hooks
-		end
-		start.MouseButton1Click:Connect(function()
-			if checking then return end
-			checking = true
-			try()
-			checking = false
-		end)
-		close.MouseButton1Click:Connect(function() result = false end)
-
-		while result == nil and alive and gui.Parent do task.wait() end
-		gui:Destroy()
-		return result or nil
+	-- urls[kind] = webhook URL; only valid-looking URLs are loaded
+	local urls = {}
+	for kind, url in pairs(readJson(WEBHOOK_FILE)) do
+		if type(url) == "string" and isWebhook(url) then urls[kind] = url end
 	end
 
-	print("[Logger] Waiting for channels in the Log Channels panel...")
-	local WEBHOOKS = askForChannels()
-	if not WEBHOOKS then
-		warn("[Logger] Log Channels panel closed, logger not started.")
-		return
+	-- settings.enabled[kind] = false when that channel's toggle is off; settings.flyKey = key name
+	local settings = readJson(SETTINGS_FILE)
+	if type(settings.enabled) ~= "table" then settings.enabled = {} end
+	if type(settings.flyKey) ~= "string" or not pcall(function() return Enum.KeyCode[settings.flyKey] end) then
+		settings.flyKey = "P"
 	end
-	WEBHOOKS.announcement = WEBHOOKS.announcement or WEBHOOKS.chat
-	local enabled = {}
-	for _, channel in ipairs(CHANNELS) do
-		if WEBHOOKS[channel.kind] then table.insert(enabled, channel.kind) end
+	local function saveSettings() writeJson(SETTINGS_FILE, settings) end
+
+	-- the webhook a log of this kind should go to right now, or nil if it's off / not set
+	local function activeWebhook(kind)
+		if settings.enabled[kind] == false then return nil end
+		local url = urls[kind]
+		if not url and kind == "announcement" then url = urls.chat end
+		return url
 	end
-	print("[Logger] Logging to Discord:", #enabled > 0 and table.concat(enabled, ", ") or "nothing (all boxes empty)")
+
+	local function describeChannels()
+		local on = {}
+		for _, channel in ipairs(CHANNELS) do
+			if activeWebhook(channel.kind) then table.insert(on, channel.kind) end
+		end
+		return #on > 0 and table.concat(on, ", ") or "nothing (set webhooks in the Logger Panel)"
+	end
+	print("[Logger] Logging to Discord:", describeChannels())
 
 	local gameName = "Unknown"
 	pcall(function()
@@ -507,8 +371,8 @@ local function main()
 	-- kind is "join", "leave", "chat" or "announcement"; sent to that channel's webhook from the panel
 	local function post(kind, payload)
 		if not alive then return end
-		local webhook = WEBHOOKS[kind]
-		if not webhook then return end -- this log is turned off in the panel
+		local webhook = activeWebhook(kind)
+		if not webhook then return end -- this log is off in the panel
 		local status, body = callServer("/log", {
 			key = KEY,
 			userId = Players.LocalPlayer.UserId,
@@ -567,7 +431,7 @@ local function main()
 
 	local function send(kind, title, color, player)
 		saveToFile(kind == "join" and "JOINED" or "LEFT", player)
-		if not WEBHOOKS[kind] then return end
+		if not activeWebhook(kind) then return end
 		fetchAvatars({ [player.UserId] = true })
 		local embed, profile = playerCard(title, color, player.UserId, player.DisplayName, player.Name)
 		table.insert(embed.fields, { name = "Account Age", value = player.AccountAge .. " days", inline = true })
@@ -631,7 +495,7 @@ local function main()
 		local chatQueue = {}
 
 		track(TextChatService.MessageReceived:Connect(function(msg)
-			if not WEBHOOKS.chat then return end -- chat logs are turned off
+			if not activeWebhook("chat") then return end -- chat logs are off
 			if not msg.TextSource then return end -- skip system messages
 			if not msg.Text or msg.Text == "" then return end
 			local userId = msg.TextSource.UserId
@@ -744,7 +608,7 @@ local function main()
 		end
 
 		local function check(label)
-			if not WEBHOOKS.announcement then return end -- announcements are turned off
+			if not activeWebhook("announcement") then return end -- announcements are off
 			if busy[label] then return end
 			if not getSender(label.Text) then return end
 			busy[label] = true
@@ -1467,15 +1331,19 @@ local function main()
 	end)
 
 	---------------------------------------------------------------- free camera
-	-- Press P to fly the camera anywhere on the map while your character stays put.
+	-- Press the fly key (P unless you change it in the Logger Panel) or use the panel's Fly toggle
+	-- to fly the camera anywhere on the map while your character stays put.
 	-- WASD to move, E/Space up, Q down, hold right mouse to look around,
-	-- Shift to go faster, scroll to change speed, P again to snap back to your character.
+	-- Shift to go faster, scroll to change speed, fly key again to snap back to your character.
+	local freecam = {
+		listeningForKey = false, -- true while the panel waits for you to press a new fly key
+		onChange = nil, -- the panel sets this so its Fly toggle follows the key
+	}
 	do
 		local RunService = game:GetService("RunService")
 		local UserInputService = game:GetService("UserInputService")
 		local ContextActionService = game:GetService("ContextActionService")
 
-		local TOGGLE_KEY = Enum.KeyCode.P
 		local LOOK_SPEED = 0.005 -- radians per pixel of mouse movement
 		local MOVE_KEYS = {
 			Enum.KeyCode.W, Enum.KeyCode.A, Enum.KeyCode.S, Enum.KeyCode.D,
@@ -1552,10 +1420,16 @@ local function main()
 			RunService:BindToRenderStep("LoggerFreecam", Enum.RenderPriority.Camera.Value + 1, update)
 		end
 
+		function freecam.set(on)
+			if on then startFlying() else stopFlying() end
+			if freecam.onChange then freecam.onChange(flying) end
+		end
+		function freecam.isOn() return flying end
+
 		track(UserInputService.InputBegan:Connect(function(input, gameProcessed)
-			if gameProcessed or not alive then return end -- ignore keys typed into chat/text boxes
-			if input.KeyCode == TOGGLE_KEY then
-				if flying then stopFlying() else startFlying() end
+			if gameProcessed or not alive or freecam.listeningForKey then return end -- ignore chat typing
+			if input.KeyCode == Enum.KeyCode[settings.flyKey] then
+				freecam.set(not flying)
 			end
 		end))
 		-- scroll wheel changes fly speed
@@ -1569,10 +1443,404 @@ local function main()
 			while alive do task.wait(0.5) end
 			stopFlying()
 		end)
-		print("[Logger] Free camera ready: press P to fly, P again to come back.")
+		print("[Logger] Free camera ready: press " .. settings.flyKey .. " to fly, again to come back.")
 	end
 
-	print("[Logger] v14 running (chat cards + translation + announcements + credits viewer + free camera).")
+	---------------------------------------------------------------- logger panel
+	-- One window for your settings: a webhook box and an on/off toggle for each log channel, plus
+	-- the free camera's toggle and key. Drag the title bar to move it, drag the bottom-right corner
+	-- to make it bigger or smaller, Right Ctrl hides it and brings it back (so does the ×).
+	do
+		local UserInputService = game:GetService("UserInputService")
+		local PANEL_KEY = Enum.KeyCode.RightControl
+		local MIN_W, MIN_H, MAX_W, MAX_H = 300, 160, 900, 900
+		local W, H, BAR = 420, 480, 44
+		local C = {
+			bg = Color3.fromRGB(18, 18, 24),
+			panel = Color3.fromRGB(28, 28, 36),
+			row = Color3.fromRGB(34, 34, 44),
+			stroke = Color3.fromRGB(60, 60, 78),
+			text = Color3.fromRGB(240, 240, 245),
+			subtext = Color3.fromRGB(150, 150, 165),
+			accent = Color3.fromRGB(255, 196, 64),
+			on = Color3.fromRGB(80, 200, 120),
+			off = Color3.fromRGB(70, 70, 86),
+			bad = Color3.fromRGB(240, 90, 90),
+		}
+
+		local gui = makeGui("LoggerPanel")
+		local frame = new("Frame", {
+			Size = UDim2.fromOffset(W, H),
+			Position = UDim2.new(0, 24, 0.5, -H / 2),
+			BackgroundColor3 = C.bg,
+			ClipsDescendants = true,
+			Parent = gui,
+		})
+		round(frame, 14)
+		new("UIStroke", { Color = C.stroke, Thickness = 1.5, Parent = frame })
+
+		-- title bar: drag it to move the window
+		local bar = new("Frame", { Size = UDim2.new(1, 0, 0, BAR), BackgroundColor3 = C.panel, Parent = frame })
+		round(bar, 14)
+		new("Frame", { -- squares off the bar's bottom corners
+			Size = UDim2.new(1, 0, 0, 14),
+			Position = UDim2.new(0, 0, 1, -14),
+			BackgroundColor3 = C.panel,
+			BorderSizePixel = 0,
+			Parent = bar,
+		})
+		new("TextLabel", {
+			Text = "⚙  Logger Panel",
+			Size = UDim2.new(1, -60, 1, 0),
+			Position = UDim2.fromOffset(14, 0),
+			BackgroundTransparency = 1,
+			Font = Enum.Font.GothamBold,
+			TextSize = 16,
+			TextColor3 = C.text,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			Parent = bar,
+		})
+		local hideBtn = new("TextButton", {
+			Text = "×",
+			Size = UDim2.fromOffset(28, 28),
+			Position = UDim2.new(1, -36, 0, 8),
+			BackgroundColor3 = C.row,
+			Font = Enum.Font.GothamBold,
+			TextSize = 16,
+			TextColor3 = C.subtext,
+			Parent = bar,
+		})
+		round(hideBtn, 8)
+
+		-- the body scrolls, so everything is still reachable when the window is made small
+		local body = new("ScrollingFrame", {
+			Size = UDim2.new(1, 0, 1, -BAR),
+			Position = UDim2.fromOffset(0, BAR),
+			BackgroundTransparency = 1,
+			BorderSizePixel = 0,
+			ScrollBarThickness = 4,
+			ScrollBarImageColor3 = C.stroke,
+			AutomaticCanvasSize = Enum.AutomaticSize.Y,
+			CanvasSize = UDim2.new(),
+			Parent = frame,
+		})
+		new("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 8), Parent = body })
+		new("UIPadding", {
+			PaddingLeft = UDim.new(0, 14),
+			PaddingRight = UDim.new(0, 14),
+			PaddingTop = UDim.new(0, 10),
+			PaddingBottom = UDim.new(0, 26),
+			Parent = body,
+		})
+
+		local order = 0
+		local function nextOrder()
+			order += 1
+			return order
+		end
+
+		local function heading(text)
+			new("TextLabel", {
+				Text = text,
+				LayoutOrder = nextOrder(),
+				Size = UDim2.new(1, 0, 0, 18),
+				BackgroundTransparency = 1,
+				Font = Enum.Font.GothamBold,
+				TextSize = 12,
+				TextColor3 = C.accent,
+				TextXAlignment = Enum.TextXAlignment.Left,
+				Parent = body,
+			})
+		end
+
+		local function label(parent, text, rightGap)
+			return new("TextLabel", {
+				Text = text,
+				Size = UDim2.new(1, -rightGap, 0, 22),
+				BackgroundTransparency = 1,
+				Font = Enum.Font.GothamMedium,
+				TextSize = 13,
+				TextColor3 = C.text,
+				TextXAlignment = Enum.TextXAlignment.Left,
+				TextTruncate = Enum.TextTruncate.AtEnd,
+				Parent = parent,
+			})
+		end
+
+		-- an on/off switch in the top-right of parent; onToggle(newValue) runs when it's clicked
+		local function makeSwitch(parent, value, onToggle)
+			local back = new("TextButton", {
+				Text = "",
+				AutoButtonColor = false,
+				Size = UDim2.fromOffset(44, 22),
+				Position = UDim2.new(1, -44, 0, 0),
+				BackgroundColor3 = value and C.on or C.off,
+				Parent = parent,
+			})
+			round(back, 11)
+			local knob = new("Frame", {
+				Size = UDim2.fromOffset(18, 18),
+				Position = UDim2.fromOffset(value and 24 or 2, 2),
+				BackgroundColor3 = Color3.new(1, 1, 1),
+				Parent = back,
+			})
+			round(knob, 9)
+			local switch = { value = value }
+			function switch.set(v)
+				switch.value = v
+				TweenService:Create(back, TweenInfo.new(0.15), { BackgroundColor3 = v and C.on or C.off }):Play()
+				TweenService:Create(knob, TweenInfo.new(0.15), { Position = UDim2.fromOffset(v and 24 or 2, 2) }):Play()
+			end
+			back.MouseButton1Click:Connect(function()
+				switch.set(not switch.value)
+				onToggle(switch.value)
+			end)
+			return switch
+		end
+
+		---------------- log channels: a toggle and a webhook box each
+		heading("LOG CHANNELS")
+		local boxes = {}
+		for _, channel in ipairs(CHANNELS) do
+			local row = new("Frame", {
+				LayoutOrder = nextOrder(),
+				Size = UDim2.new(1, 0, 0, 62),
+				BackgroundTransparency = 1,
+				Parent = body,
+			})
+			label(row, channel.label .. (channel.kind == "announcement" and "  (empty = chat channel)" or ""), 54)
+			makeSwitch(row, settings.enabled[channel.kind] ~= false, function(on)
+				settings.enabled[channel.kind] = on
+				saveSettings()
+				print("[Logger]", channel.label, on and "ON." or "OFF.", "Logging to Discord:", describeChannels())
+			end)
+			local box = new("TextBox", {
+				Text = urls[channel.kind] or "",
+				PlaceholderText = "https://discord.com/api/webhooks/...",
+				PlaceholderColor3 = Color3.fromRGB(110, 110, 125),
+				ClearTextOnFocus = false,
+				ClipsDescendants = true,
+				Size = UDim2.new(1, 0, 0, 32),
+				Position = UDim2.fromOffset(0, 28),
+				BackgroundColor3 = C.panel,
+				Font = Enum.Font.Gotham,
+				TextSize = 13,
+				TextColor3 = C.text,
+				TextXAlignment = Enum.TextXAlignment.Left,
+				Parent = row,
+			})
+			round(box, 8)
+			new("UIPadding", { PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10), Parent = box })
+			boxes[channel.kind] = box
+		end
+
+		local saveBtn = new("TextButton", {
+			Text = "Save webhooks",
+			LayoutOrder = nextOrder(),
+			Size = UDim2.new(1, 0, 0, 34),
+			BackgroundColor3 = C.accent,
+			Font = Enum.Font.GothamBold,
+			TextSize = 14,
+			TextColor3 = Color3.fromRGB(30, 24, 10),
+			Parent = body,
+		})
+		round(saveBtn, 9)
+		local status = new("TextLabel", {
+			Text = next(urls) and "Toggles work straight away. Press Save after changing a webhook."
+				or "Paste your Discord webhooks above and press Save.",
+			LayoutOrder = nextOrder(),
+			Size = UDim2.new(1, 0, 0, 30),
+			BackgroundTransparency = 1,
+			Font = Enum.Font.Gotham,
+			TextSize = 12,
+			TextWrapped = true,
+			TextColor3 = C.subtext,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			Parent = body,
+		})
+		local function setStatus(text, color)
+			status.Text = text
+			status.TextColor3 = color or C.subtext
+		end
+
+		local saving = false
+		saveBtn.MouseButton1Click:Connect(function()
+			if saving then return end
+			saving = true
+			local newUrls, problem = {}, nil
+			for _, channel in ipairs(CHANNELS) do
+				local url = trim(boxes[channel.kind].Text)
+				if url ~= "" then
+					if not isWebhook(url) then
+						problem = channel.label .. ": that isn't a Discord webhook URL."
+						break
+					end
+					newUrls[channel.kind] = url
+				end
+			end
+			if not problem then
+				setStatus("Checking webhooks...")
+				for _, channel in ipairs(CHANNELS) do
+					local url = newUrls[channel.kind]
+					if url and url ~= urls[channel.kind] then -- only check the ones that changed
+						local works, reason = webhookWorks(url)
+						if not works then
+							problem = channel.label .. ": " .. reason
+							break
+						end
+					end
+				end
+			end
+			if problem then
+				setStatus(problem, C.bad)
+				shake(frame)
+			else
+				urls = newUrls
+				writeJson(WEBHOOK_FILE, urls)
+				setStatus("Saved! Logging to Discord: " .. describeChannels(), C.on)
+				print("[Logger] Webhooks saved. Logging to Discord:", describeChannels())
+			end
+			saving = false
+		end)
+
+		---------------- free camera: on/off toggle and the key that toggles it
+		heading("FREE CAMERA")
+		local flyRow = new("Frame", {
+			LayoutOrder = nextOrder(),
+			Size = UDim2.new(1, 0, 0, 24),
+			BackgroundTransparency = 1,
+			Parent = body,
+		})
+		label(flyRow, "Fly", 54)
+		local flySwitch = makeSwitch(flyRow, freecam.isOn(), function(on)
+			freecam.set(on)
+		end)
+		-- keep the toggle in step when flying is switched with the key
+		freecam.onChange = function(on)
+			if flySwitch.value ~= on then flySwitch.set(on) end
+		end
+
+		local keyRow = new("Frame", {
+			LayoutOrder = nextOrder(),
+			Size = UDim2.new(1, 0, 0, 30),
+			BackgroundTransparency = 1,
+			Parent = body,
+		})
+		label(keyRow, "Fly key", 140).Position = UDim2.fromOffset(0, 4)
+		local keyBtn = new("TextButton", {
+			Text = settings.flyKey,
+			Size = UDim2.fromOffset(130, 28),
+			Position = UDim2.new(1, -130, 0, 0),
+			BackgroundColor3 = C.panel,
+			Font = Enum.Font.GothamBold,
+			TextSize = 13,
+			TextColor3 = C.accent,
+			Parent = keyRow,
+		})
+		round(keyBtn, 8)
+		new("UIStroke", { Color = C.stroke, Thickness = 1, ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Parent = keyBtn })
+		new("TextLabel", {
+			Text = "Click the key button, then press the key you want (Esc cancels). "
+				.. "WASD moves, E/Space up, Q down, hold right mouse to look, Shift is faster, scroll changes speed.",
+			LayoutOrder = nextOrder(),
+			Size = UDim2.new(1, 0, 0, 44),
+			BackgroundTransparency = 1,
+			Font = Enum.Font.Gotham,
+			TextSize = 12,
+			TextWrapped = true,
+			TextColor3 = C.subtext,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			TextYAlignment = Enum.TextYAlignment.Top,
+			Parent = body,
+		})
+
+		keyBtn.MouseButton1Click:Connect(function()
+			if freecam.listeningForKey then return end
+			freecam.listeningForKey = true
+			keyBtn.Text = "Press a key..."
+			local conn
+			conn = track(UserInputService.InputBegan:Connect(function(input)
+				if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
+				if input.KeyCode == PANEL_KEY then return end -- Right Ctrl is taken by the panel
+				conn:Disconnect()
+				if input.KeyCode ~= Enum.KeyCode.Escape then
+					settings.flyKey = input.KeyCode.Name
+					saveSettings()
+					print("[Logger] Fly key set to", settings.flyKey)
+				end
+				keyBtn.Text = settings.flyKey
+				-- wait a frame so this same key press doesn't also toggle flying
+				task.defer(function() freecam.listeningForKey = false end)
+			end))
+		end)
+
+		---------------- moving, resizing, hiding
+		local grip = new("TextButton", {
+			Text = "◢",
+			Size = UDim2.fromOffset(22, 22),
+			Position = UDim2.new(1, -22, 1, -22),
+			BackgroundTransparency = 1,
+			AutoButtonColor = false,
+			Font = Enum.Font.GothamBold,
+			TextSize = 14,
+			TextColor3 = C.subtext,
+			ZIndex = 10,
+			Parent = frame,
+		})
+
+		local function isPress(input)
+			return input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch
+		end
+		local dragging, resizing, startInput, startPos, startSize
+		bar.InputBegan:Connect(function(input)
+			if isPress(input) then
+				dragging, startInput, startPos = true, input.Position, frame.Position
+			end
+		end)
+		grip.InputBegan:Connect(function(input)
+			if isPress(input) then
+				resizing, startInput, startSize = true, input.Position, frame.AbsoluteSize
+			end
+		end)
+		track(UserInputService.InputChanged:Connect(function(input)
+			if input.UserInputType ~= Enum.UserInputType.MouseMovement and input.UserInputType ~= Enum.UserInputType.Touch then
+				return
+			end
+			local delta = input.Position - (startInput or input.Position)
+			if dragging then
+				frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+			elseif resizing then
+				frame.Size = UDim2.fromOffset(
+					math.clamp(startSize.X + delta.X, MIN_W, MAX_W),
+					math.clamp(startSize.Y + delta.Y, MIN_H, MAX_H)
+				)
+			end
+		end))
+		track(UserInputService.InputEnded:Connect(function(input)
+			if isPress(input) then
+				dragging, resizing = false, false
+			end
+		end))
+
+		hideBtn.MouseButton1Click:Connect(function()
+			frame.Visible = false
+			print("[Logger] Panel hidden. Press Right Ctrl to bring it back.")
+		end)
+		track(UserInputService.InputBegan:Connect(function(input)
+			if input.KeyCode == PANEL_KEY and alive and not freecam.listeningForKey then
+				frame.Visible = not frame.Visible
+			end
+		end))
+
+		-- re-executing or losing the key closes the panel too
+		task.spawn(function()
+			while alive do task.wait(0.5) end
+			gui:Destroy()
+		end)
+		print("[Logger] Logger Panel open. Right Ctrl hides/shows it.")
+	end
+
+	print("[Logger] v15 running (logs + credits viewer + free camera + Logger Panel).")
 end
 
 local ok, err = xpcall(main, debug.traceback)
