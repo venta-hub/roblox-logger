@@ -1,7 +1,7 @@
--- Join/Leave/Chat/Announcement Logger + Credits Viewer + Free Camera (v15, server version)
--- After the key is accepted, the Logger Panel opens (Right Ctrl hides/shows it): put your own
--- Discord webhooks in it (one box per log type), switch each channel on/off, and control the free
--- camera. Logs go through the Cloudflare Worker, which checks the key on every log and only
+-- Join/Leave/Chat/Announcement Logger + Credits Viewer + Free Camera (v16, server version)
+-- After the key is accepted, the Logger Panel opens (Right Ctrl hides/shows it unless you change
+-- the key): put your own Discord webhooks in it (one box per log type), switch each channel on/off,
+-- control the free camera, change keybinds, or terminate the whole script. Logs go through the Cloudflare Worker, which checks the key on every log and only
 -- forwards to Discord webhook URLs, so without a valid key nothing gets sent.
 local SERVER_URL = "https://logger.vanta-node-7.workers.dev" -- your Worker URL
 
@@ -15,14 +15,23 @@ if genv.LoggerStop then
 end
 local alive = true
 local conns = {}
+local stopHooks = {}
 local function track(conn)
 	table.insert(conns, conn)
 	return conn
 end
+-- runs fn when this copy is stopped (re-executed, terminated, or the key is removed)
+local function onStop(fn)
+	table.insert(stopHooks, fn)
+end
+-- stops everything this copy is doing and removes its windows, straight away
 genv.LoggerStop = function()
+	if not alive then return end
 	alive = false
 	for _, c in ipairs(conns) do pcall(function() c:Disconnect() end) end
 	table.clear(conns)
+	for _, fn in ipairs(stopHooks) do pcall(fn) end
+	table.clear(stopHooks)
 end
 
 -- Executors often hide script errors from F9, so everything below runs inside main()
@@ -311,10 +320,18 @@ local function main()
 	-- settings.enabled[kind] = false when that channel's toggle is off; settings.flyKey = key name
 	local settings = readJson(SETTINGS_FILE)
 	if type(settings.enabled) ~= "table" then settings.enabled = {} end
-	if type(settings.flyKey) ~= "string" or not pcall(function() return Enum.KeyCode[settings.flyKey] end) then
-		settings.flyKey = "P"
+	-- keybinds (KeyCode names), all changeable in the Logger Panel
+	local KEY_DEFAULTS = { flyKey = "P", panelKey = "RightControl", creditsKey = "LeftControl" }
+	for name, default in pairs(KEY_DEFAULTS) do
+		local value = settings[name]
+		if type(value) ~= "string" or not pcall(function() return Enum.KeyCode[value] end) then
+			settings[name] = default
+		end
 	end
 	local function saveSettings() writeJson(SETTINGS_FILE, settings) end
+	local function keyIs(input, name) return input.KeyCode.Name == settings[name] end
+	-- true while the panel waits for you to press a new key, so that press doesn't also do something
+	local keybinds = { listening = false }
 
 	-- the webhook a log of this kind should go to right now, or nil if it's off / not set
 	local function activeWebhook(kind)
@@ -677,7 +694,8 @@ local function main()
 	---------------------------------------------------------------- credits viewer
 	-- A window listing every player in the server and how many credits they have (this was
 	-- credits.lua). Search to filter, click the sort button, click a player to copy their name,
-	-- Left Ctrl hides/shows it, drag the corner to resize, "–" shrinks it, "×" closes it.
+	-- the credits key (Left Ctrl unless changed in the Logger Panel) or "×" hides it, the key shows
+	-- it again, drag the corner to resize, "–" shrinks it to the title bar.
 	local function startCreditsViewer()
 		local Players = game:GetService("Players")
 		local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -686,7 +704,6 @@ local function main()
 
 		local KEYWORD = "credit" -- matches "Credits", "credit", "TotalCredits", etc.
 		local REFRESH = 2 -- seconds between updates
-		local TOGGLE_KEY = Enum.KeyCode.LeftControl
 		local MIN_WIDTH, MIN_HEIGHT = 290, 220
 		local MAX_WIDTH, MAX_HEIGHT = 900, 900
 
@@ -1004,7 +1021,7 @@ local function main()
 
 		-- footer
 		local footer = make("TextLabel", {
-			Text = "Click a player to copy  •  Left Ctrl to hide",
+			Text = "Click a player to copy their name",
 			TextTruncate = Enum.TextTruncate.AtEnd,
 			Size = UDim2.new(1, -24, 0, 24),
 			Position = UDim2.new(0, 12, 1, -30),
@@ -1302,28 +1319,31 @@ local function main()
 			end
 		end
 
-		local keyConn = track(UserInputService.InputBegan:Connect(function(input, gameProcessed)
-			if gameProcessed then return end
-			if input.KeyCode == TOGGLE_KEY then setShown(not shownWindow) end
+		-- the credits key (Left Ctrl unless changed in the Logger Panel) hides and shows the window
+		track(UserInputService.InputBegan:Connect(function(input, gameProcessed)
+			if gameProcessed or keybinds.listening then return end
+			if keyIs(input, "creditsKey") then setShown(not shownWindow) end
 		end))
 
+		-- × hides the window; the credits key brings it back
 		closeBtn.MouseButton1Click:Connect(function()
+			setShown(false)
+			print("[Logger] Credits window hidden. Press " .. settings.creditsKey .. " to bring it back.")
+		end)
+
+		-- terminating, re-executing or losing the key removes the window
+		onStop(function()
 			running = false
-			keyConn:Disconnect()
-			tween(scale, 0.15, { Scale = 0.85 }).Completed:Connect(function()
-				gui:Destroy()
-			end)
+			gui:Destroy()
 		end)
 
 		---------------------------------------------------------------- start
 
 		setShown(true)
 		while running and alive do
-			refresh(true)
+			if shownWindow then refresh(true) end -- no need to scan while it's hidden
 			task.wait(REFRESH)
 		end
-		-- the logger was stopped (re-executed or access removed): close the window too
-		if not alive then gui:Destroy() end
 	end
 	task.spawn(function()
 		local ok, err = xpcall(startCreditsViewer, debug.traceback)
@@ -1336,7 +1356,6 @@ local function main()
 	-- WASD to move, E/Space up, Q down, hold right mouse to look around,
 	-- Shift to go faster, scroll to change speed, fly key again to snap back to your character.
 	local freecam = {
-		listeningForKey = false, -- true while the panel waits for you to press a new fly key
 		onChange = nil, -- the panel sets this so its Fly toggle follows the key
 	}
 	do
@@ -1427,8 +1446,8 @@ local function main()
 		function freecam.isOn() return flying end
 
 		track(UserInputService.InputBegan:Connect(function(input, gameProcessed)
-			if gameProcessed or not alive or freecam.listeningForKey then return end -- ignore chat typing
-			if input.KeyCode == Enum.KeyCode[settings.flyKey] then
+			if gameProcessed or not alive or keybinds.listening then return end -- ignore chat typing
+			if keyIs(input, "flyKey") then
 				freecam.set(not flying)
 			end
 		end))
@@ -1438,21 +1457,18 @@ local function main()
 				speed = math.clamp(speed * (input.Position.Z > 0 and 1.25 or 0.8), 5, 500)
 			end
 		end))
-		-- re-executing or losing the key puts the camera back
-		task.spawn(function()
-			while alive do task.wait(0.5) end
-			stopFlying()
-		end)
+		-- terminating, re-executing or losing the key puts the camera back
+		onStop(stopFlying)
 		print("[Logger] Free camera ready: press " .. settings.flyKey .. " to fly, again to come back.")
 	end
 
 	---------------------------------------------------------------- logger panel
 	-- One window for your settings: a webhook box and an on/off toggle for each log channel, plus
 	-- the free camera's toggle and key. Drag the title bar to move it, drag the bottom-right corner
-	-- to make it bigger or smaller, Right Ctrl hides it and brings it back (so does the ×).
+	-- to make it bigger or smaller, the panel key (Right Ctrl unless changed) hides it and brings it
+	-- back (× hides it too). Keybinds can be changed here, and Terminate stops the whole script.
 	do
 		local UserInputService = game:GetService("UserInputService")
-		local PANEL_KEY = Enum.KeyCode.RightControl
 		local MIN_W, MIN_H, MAX_W, MAX_H = 300, 160, 900, 900
 		local W, H, BAR = 420, 480, 44
 		local C = {
@@ -1720,30 +1736,10 @@ local function main()
 			if flySwitch.value ~= on then flySwitch.set(on) end
 		end
 
-		local keyRow = new("Frame", {
+		new("TextLabel", {
+			Text = "WASD moves, E/Space up, Q down, hold right mouse to look, Shift is faster, scroll changes speed.",
 			LayoutOrder = nextOrder(),
 			Size = UDim2.new(1, 0, 0, 30),
-			BackgroundTransparency = 1,
-			Parent = body,
-		})
-		label(keyRow, "Fly key", 140).Position = UDim2.fromOffset(0, 4)
-		local keyBtn = new("TextButton", {
-			Text = settings.flyKey,
-			Size = UDim2.fromOffset(130, 28),
-			Position = UDim2.new(1, -130, 0, 0),
-			BackgroundColor3 = C.panel,
-			Font = Enum.Font.GothamBold,
-			TextSize = 13,
-			TextColor3 = C.accent,
-			Parent = keyRow,
-		})
-		round(keyBtn, 8)
-		new("UIStroke", { Color = C.stroke, Thickness = 1, ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Parent = keyBtn })
-		new("TextLabel", {
-			Text = "Click the key button, then press the key you want (Esc cancels). "
-				.. "WASD moves, E/Space up, Q down, hold right mouse to look, Shift is faster, scroll changes speed.",
-			LayoutOrder = nextOrder(),
-			Size = UDim2.new(1, 0, 0, 44),
 			BackgroundTransparency = 1,
 			Font = Enum.Font.Gotham,
 			TextSize = 12,
@@ -1754,24 +1750,102 @@ local function main()
 			Parent = body,
 		})
 
-		keyBtn.MouseButton1Click:Connect(function()
-			if freecam.listeningForKey then return end
-			freecam.listeningForKey = true
-			keyBtn.Text = "Press a key..."
-			local conn
-			conn = track(UserInputService.InputBegan:Connect(function(input)
-				if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
-				if input.KeyCode == PANEL_KEY then return end -- Right Ctrl is taken by the panel
-				conn:Disconnect()
-				if input.KeyCode ~= Enum.KeyCode.Escape then
-					settings.flyKey = input.KeyCode.Name
-					saveSettings()
-					print("[Logger] Fly key set to", settings.flyKey)
-				end
-				keyBtn.Text = settings.flyKey
-				-- wait a frame so this same key press doesn't also toggle flying
-				task.defer(function() freecam.listeningForKey = false end)
-			end))
+		---------------- keybinds: click a key button, then press the key you want (Esc cancels)
+		heading("KEYBINDS")
+		local KEYBIND_ROWS = {
+			{ name = "panelKey", text = "Open/close this panel" },
+			{ name = "creditsKey", text = "Open/close credits window" },
+			{ name = "flyKey", text = "Fly on/off" },
+		}
+		local function keybindRow(bind)
+			local row = new("Frame", {
+				LayoutOrder = nextOrder(),
+				Size = UDim2.new(1, 0, 0, 30),
+				BackgroundTransparency = 1,
+				Parent = body,
+			})
+			label(row, bind.text, 140).Position = UDim2.fromOffset(0, 4)
+			local button = new("TextButton", {
+				Text = settings[bind.name],
+				Size = UDim2.fromOffset(130, 28),
+				Position = UDim2.new(1, -130, 0, 0),
+				BackgroundColor3 = C.panel,
+				Font = Enum.Font.GothamBold,
+				TextSize = 13,
+				TextColor3 = C.accent,
+				TextTruncate = Enum.TextTruncate.AtEnd,
+				Parent = row,
+			})
+			round(button, 8)
+			new("UIStroke", { Color = C.stroke, Thickness = 1, ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Parent = button })
+
+			button.MouseButton1Click:Connect(function()
+				if keybinds.listening then return end
+				keybinds.listening = true
+				button.Text = "Press a key..."
+				local conn
+				conn = track(UserInputService.InputBegan:Connect(function(input)
+					if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
+					conn:Disconnect()
+					local key = input.KeyCode.Name
+					local takenBy
+					for _, other in ipairs(KEYBIND_ROWS) do
+						if other.name ~= bind.name and settings[other.name] == key then takenBy = other.text end
+					end
+					if input.KeyCode == Enum.KeyCode.Escape then
+						button.Text = settings[bind.name]
+					elseif takenBy then
+						-- one key can't do two things
+						button.Text = "Already used"
+						button.TextColor3 = C.bad
+						task.delay(1, function()
+							button.Text = settings[bind.name]
+							button.TextColor3 = C.accent
+						end)
+					else
+						settings[bind.name] = key
+						saveSettings()
+						button.Text = key
+						print("[Logger] " .. bind.text .. " key set to " .. key)
+					end
+					-- wait a frame so this same key press doesn't also trigger the old/new binding
+					task.defer(function() keybinds.listening = false end)
+				end))
+			end)
+		end
+		for _, bind in ipairs(KEYBIND_ROWS) do keybindRow(bind) end
+
+		---------------- terminate: stops everything and removes all windows (run the loadstring to relaunch)
+		heading("SCRIPT")
+		local terminateBtn = new("TextButton", {
+			Text = "Terminate script",
+			LayoutOrder = nextOrder(),
+			Size = UDim2.new(1, 0, 0, 34),
+			BackgroundColor3 = Color3.fromRGB(120, 36, 36),
+			Font = Enum.Font.GothamBold,
+			TextSize = 14,
+			TextColor3 = C.text,
+			Parent = body,
+		})
+		round(terminateBtn, 9)
+		new("UIStroke", { Color = C.bad, Thickness = 1, ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Parent = terminateBtn })
+		-- needs two clicks so it isn't hit by accident
+		local armed = false
+		terminateBtn.MouseButton1Click:Connect(function()
+			if not armed then
+				armed = true
+				terminateBtn.Text = "Click again to terminate"
+				task.delay(3, function()
+					if armed and terminateBtn.Parent then
+						armed = false
+						terminateBtn.Text = "Terminate script"
+					end
+				end)
+				return
+			end
+			print("[Logger] Terminated: logging, credits window, free camera and panel all stopped. Run the loadstring to relaunch.")
+			genv.LoggerStop()
+			genv.LoggerStop = nil
 		end)
 
 		---------------- moving, resizing, hiding
@@ -1824,23 +1898,21 @@ local function main()
 
 		hideBtn.MouseButton1Click:Connect(function()
 			frame.Visible = false
-			print("[Logger] Panel hidden. Press Right Ctrl to bring it back.")
+			print("[Logger] Panel hidden. Press " .. settings.panelKey .. " to bring it back.")
 		end)
+		-- the panel key (Right Ctrl unless changed above) hides and shows the panel
 		track(UserInputService.InputBegan:Connect(function(input)
-			if input.KeyCode == PANEL_KEY and alive and not freecam.listeningForKey then
+			if alive and not keybinds.listening and keyIs(input, "panelKey") then
 				frame.Visible = not frame.Visible
 			end
 		end))
 
-		-- re-executing or losing the key closes the panel too
-		task.spawn(function()
-			while alive do task.wait(0.5) end
-			gui:Destroy()
-		end)
-		print("[Logger] Logger Panel open. Right Ctrl hides/shows it.")
+		-- terminating, re-executing or losing the key removes the panel
+		onStop(function() gui:Destroy() end)
+		print("[Logger] Logger Panel open. " .. settings.panelKey .. " hides/shows it.")
 	end
 
-	print("[Logger] v15 running (logs + credits viewer + free camera + Logger Panel).")
+	print("[Logger] v16 running (logs + credits viewer + free camera + Logger Panel).")
 end
 
 local ok, err = xpcall(main, debug.traceback)
