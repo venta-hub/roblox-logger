@@ -1,4 +1,4 @@
--- Join/Leave/Chat/Announcement Logger (v11, server version)
+-- Join/Leave/Chat/Announcement Logger (v12, server version)
 -- After the key is accepted, a Log Channels panel asks for your own Discord webhooks (one box per
 -- log type). Logs go through the Cloudflare Worker, which checks the key on every log and only
 -- forwards to Discord webhook URLs, so without a valid key nothing gets sent.
@@ -488,8 +488,28 @@ local function main()
 		end)
 	end
 
+	-- Called when the server stops accepting the key (it was deleted, expired, or this account was
+	-- removed from it): forgets the saved key and shuts the logger down.
+	local function lostAccess(reason)
+		if not alive then return end
+		warn("[Logger] Access removed:", reason or "key no longer valid", "- logger stopped.")
+		pcall(function() if delfile and isfile and isfile(KEY_FILE) then delfile(KEY_FILE) end end)
+		genv.LoggerStop()
+	end
+
+	-- re-checks the key every minute, so removing access stops the script even if nothing is logged
+	task.spawn(function()
+		while alive do
+			task.wait(60)
+			if not alive then break end
+			local status, body = callServer("/check", { key = KEY, userId = Players.LocalPlayer.UserId })
+			if status == 403 then lostAccess(body.error) end
+		end
+	end)
+
 	-- kind is "join", "leave", "chat" or "announcement"; sent to that channel's webhook from the panel
 	local function post(kind, payload)
+		if not alive then return end
 		local webhook = WEBHOOKS[kind]
 		if not webhook then return end -- this log is turned off in the panel
 		local status, body = callServer("/log", {
@@ -501,6 +521,8 @@ local function main()
 		})
 		if status == nil then
 			warn("[Logger] Couldn't reach the server.")
+		elseif status == 403 then
+			lostAccess(body.error)
 		elseif status >= 400 then
 			warn("[Logger] Server refused the", kind, "log:", status, body.error or "")
 		end
@@ -791,7 +813,7 @@ local function main()
 		track(playerGui.DescendantAdded:Connect(watch))
 	end
 
-	print("[Logger] v11 running (server version: chat cards + translation + announcements).")
+	print("[Logger] v12 running (server version: chat cards + translation + announcements).")
 end
 
 local ok, err = xpcall(main, debug.traceback)
