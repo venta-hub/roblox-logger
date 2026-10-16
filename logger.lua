@@ -1,4 +1,4 @@
--- Join/Leave/Chat/Announcement Logger (v12, server version)
+-- Join/Leave/Chat/Announcement Logger + Credits Viewer (v13, server version)
 -- After the key is accepted, a Log Channels panel asks for your own Discord webhooks (one box per
 -- log type). Logs go through the Cloudflare Worker, which checks the key on every log and only
 -- forwards to Discord webhook URLs, so without a valid key nothing gets sent.
@@ -418,7 +418,7 @@ local function main()
 		local result -- nil while waiting, then the webhooks table, or false if closed
 		local checking = false
 		local function try()
-			local hooks, any = {}, false
+			local hooks = {} -- all boxes empty is fine: then only the credits viewer runs
 			for _, channel in ipairs(CHANNELS) do
 				local url = trim(boxes[channel.kind].Text)
 				if url ~= "" then
@@ -426,11 +426,8 @@ local function main()
 						return fail(channel.label .. ": that isn't a Discord webhook URL.")
 					end
 					hooks[channel.kind] = url
-					any = true
 				end
 			end
-			if not any then return fail("Fill in at least one channel.") end
-
 			status.TextColor3 = Color3.fromRGB(150, 150, 165)
 			status.Text = "Checking webhooks..."
 			for _, channel in ipairs(CHANNELS) do
@@ -470,7 +467,7 @@ local function main()
 	for _, channel in ipairs(CHANNELS) do
 		if WEBHOOKS[channel.kind] then table.insert(enabled, channel.kind) end
 	end
-	print("[Logger] Logging to Discord:", table.concat(enabled, ", "))
+	print("[Logger] Logging to Discord:", #enabled > 0 and table.concat(enabled, ", ") or "nothing (all boxes empty)")
 
 	local gameName = "Unknown"
 	pcall(function()
@@ -813,7 +810,663 @@ local function main()
 		track(playerGui.DescendantAdded:Connect(watch))
 	end
 
-	print("[Logger] v12 running (server version: chat cards + translation + announcements).")
+	---------------------------------------------------------------- credits viewer
+	-- A window listing every player in the server and how many credits they have (this was
+	-- credits.lua). Search to filter, click the sort button, click a player to copy their name,
+	-- Left Ctrl hides/shows it, drag the corner to resize, "–" shrinks it, "×" closes it.
+	local function startCreditsViewer()
+		local Players = game:GetService("Players")
+		local ReplicatedStorage = game:GetService("ReplicatedStorage")
+		local UserInputService = game:GetService("UserInputService")
+		local TweenService = game:GetService("TweenService")
+
+		local KEYWORD = "credit" -- matches "Credits", "credit", "TotalCredits", etc.
+		local REFRESH = 2 -- seconds between updates
+		local TOGGLE_KEY = Enum.KeyCode.LeftControl
+		local MIN_WIDTH, MIN_HEIGHT = 290, 220
+		local MAX_WIDTH, MAX_HEIGHT = 900, 900
+
+		local LocalPlayer = Players.LocalPlayer
+
+		local THEME = {
+			bg = Color3.fromRGB(18, 18, 24),
+			panel = Color3.fromRGB(28, 28, 36),
+			row = Color3.fromRGB(34, 34, 44),
+			rowHover = Color3.fromRGB(46, 46, 60),
+			stroke = Color3.fromRGB(60, 60, 78),
+			text = Color3.fromRGB(240, 240, 245),
+			subtext = Color3.fromRGB(150, 150, 165),
+			accent = Color3.fromRGB(255, 196, 64), -- credit gold
+			accent2 = Color3.fromRGB(255, 140, 50),
+			you = Color3.fromRGB(90, 160, 255),
+			up = Color3.fromRGB(80, 220, 120),
+			down = Color3.fromRGB(240, 90, 90),
+			warn = Color3.fromRGB(240, 180, 80),
+		}
+		local MEDALS = {
+			Color3.fromRGB(255, 205, 60), -- 1st gold
+			Color3.fromRGB(200, 205, 215), -- 2nd silver
+			Color3.fromRGB(210, 140, 80), -- 3rd bronze
+		}
+
+		---------------------------------------------------------------- finding credits
+
+		local function matches(name)
+			return name:lower():find(KEYWORD, 1, true) ~= nil
+		end
+
+		local reported = {}
+		local function report(player, where)
+			if reported[player] == where then return end
+			reported[player] = where
+			print("[Credits]", player.Name, "->", where)
+		end
+
+		local function findCredits(player)
+			-- 1. values inside the player (leaderstats, Data folders, etc.)
+			for _, d in ipairs(player:GetDescendants()) do
+				if d:IsA("ValueBase") and matches(d.Name) then
+					report(player, d:GetFullName())
+					return d.Value
+				end
+			end
+			-- 2. attributes on the player
+			for name, value in pairs(player:GetAttributes()) do
+				if matches(name) then
+					report(player, player:GetFullName() .. " attribute " .. name)
+					return value
+				end
+			end
+			-- 3. per-player folders elsewhere, named after the player or their user ID
+			local id = tostring(player.UserId)
+			for _, d in ipairs(ReplicatedStorage:GetDescendants()) do
+				if d:IsA("ValueBase") and matches(d.Name) then
+					local parent = d.Parent
+					while parent and parent ~= ReplicatedStorage do
+						if parent.Name == player.Name or parent.Name == id then
+							report(player, d:GetFullName())
+							return d.Value
+						end
+						parent = parent.Parent
+					end
+				end
+			end
+			return nil
+		end
+
+		local function format(n)
+			if type(n) ~= "number" then return tostring(n) end
+			local s = tostring(math.floor(math.abs(n)))
+			s = s:reverse():gsub("(%d%d%d)", "%1,"):reverse():gsub("^,", "")
+			return (n < 0 and "-" or "") .. s
+		end
+
+		---------------------------------------------------------------- ui helpers
+
+		local function make(className, props, children)
+			local obj = Instance.new(className)
+			for k, v in pairs(props or {}) do
+				if k ~= "Parent" then obj[k] = v end
+			end
+			for _, child in ipairs(children or {}) do
+				child.Parent = obj
+			end
+			if props and props.Parent then obj.Parent = props.Parent end
+			return obj
+		end
+
+		local function corner(radius)
+			return make("UICorner", { CornerRadius = UDim.new(0, radius) })
+		end
+
+		local function stroke(color, thickness, transparency)
+			return make("UIStroke", {
+				Color = color,
+				Thickness = thickness or 1,
+				Transparency = transparency or 0,
+				ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+			})
+		end
+
+		local function tween(obj, time, props)
+			local t = TweenService:Create(obj, TweenInfo.new(time, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), props)
+			t:Play()
+			return t
+		end
+
+		---------------------------------------------------------------- window
+
+		local gui = makeGui("CreditsViewer")
+		gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+		local WIDTH, HEIGHT, BAR = 340, 460, 52
+
+		local frame = make("Frame", {
+			Size = UDim2.fromOffset(WIDTH, HEIGHT),
+			Position = UDim2.new(1, -WIDTH - 24, 0.5, -HEIGHT / 2),
+			BackgroundColor3 = THEME.bg,
+			BorderSizePixel = 0,
+			ClipsDescendants = true,
+			Parent = gui,
+		}, { corner(14), stroke(THEME.stroke, 1.5) })
+		local scale = make("UIScale", { Scale = 0.85, Parent = frame })
+
+		-- title bar with a gold glow along the top
+		local bar = make("Frame", {
+			Size = UDim2.new(1, 0, 0, BAR),
+			BackgroundColor3 = THEME.panel,
+			BorderSizePixel = 0,
+			Parent = frame,
+		}, {
+			corner(14),
+			make("UIGradient", {
+				Color = ColorSequence.new(Color3.fromRGB(70, 55, 25), THEME.panel),
+				Rotation = 90,
+			}),
+		})
+		-- square off the bar's bottom corners
+		make("Frame", {
+			Size = UDim2.new(1, 0, 0, 14),
+			Position = UDim2.new(0, 0, 1, -14),
+			BackgroundColor3 = THEME.panel,
+			BorderSizePixel = 0,
+			Parent = bar,
+		})
+		make("Frame", {
+			Size = UDim2.new(1, 0, 0, 2),
+			Position = UDim2.new(0, 0, 1, -2),
+			BorderSizePixel = 0,
+			BackgroundColor3 = Color3.new(1, 1, 1),
+			Parent = bar,
+		}, {
+			make("UIGradient", { Color = ColorSequence.new(THEME.accent, THEME.accent2) }),
+		})
+
+		make("TextLabel", {
+			Text = "💰",
+			Size = UDim2.fromOffset(36, 36),
+			Position = UDim2.fromOffset(10, 8),
+			BackgroundColor3 = Color3.fromRGB(60, 48, 20),
+			Font = Enum.Font.GothamBold,
+			TextSize = 20,
+			Parent = bar,
+		}, { corner(10), stroke(THEME.accent, 1, 0.5) })
+
+		make("TextLabel", {
+			Text = "Player Credits",
+			Size = UDim2.new(1, -140, 0, 20),
+			Position = UDim2.fromOffset(54, 9),
+			BackgroundTransparency = 1,
+			Font = Enum.Font.GothamBold,
+			TextSize = 16,
+			TextColor3 = THEME.text,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			Parent = bar,
+		})
+		local subtitle = make("TextLabel", {
+			Text = "Loading...",
+			Size = UDim2.new(1, -140, 0, 16),
+			Position = UDim2.fromOffset(54, 28),
+			BackgroundTransparency = 1,
+			Font = Enum.Font.Gotham,
+			TextSize = 12,
+			TextColor3 = THEME.subtext,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			TextTruncate = Enum.TextTruncate.AtEnd,
+			Parent = bar,
+		})
+
+		local function barButton(text, x, hoverColor)
+			local b = make("TextButton", {
+				Text = text,
+				Size = UDim2.fromOffset(30, 30),
+				Position = UDim2.new(1, x, 0, 11),
+				BackgroundColor3 = THEME.row,
+				AutoButtonColor = false,
+				Font = Enum.Font.GothamBold,
+				TextSize = 16,
+				TextColor3 = THEME.subtext,
+				Parent = bar,
+			}, { corner(8) })
+			b.MouseEnter:Connect(function() tween(b, 0.15, { BackgroundColor3 = hoverColor, TextColor3 = THEME.text }) end)
+			b.MouseLeave:Connect(function() tween(b, 0.15, { BackgroundColor3 = THEME.row, TextColor3 = THEME.subtext }) end)
+			return b
+		end
+		local minimizeBtn = barButton("–", -76, THEME.rowHover)
+		local closeBtn = barButton("×", -40, THEME.down)
+
+		-- body
+		local body = make("Frame", {
+			Size = UDim2.new(1, 0, 1, -BAR),
+			Position = UDim2.fromOffset(0, BAR),
+			BackgroundTransparency = 1,
+			Parent = frame,
+		})
+
+		-- search box + sort button
+		local searchHolder = make("Frame", {
+			Size = UDim2.new(1, -126, 0, 34),
+			Position = UDim2.fromOffset(12, 12),
+			BackgroundColor3 = THEME.panel,
+			Parent = body,
+		}, { corner(9) })
+		local searchStroke = stroke(THEME.stroke, 1)
+		searchStroke.Parent = searchHolder
+		make("TextLabel", {
+			Text = "🔍",
+			Size = UDim2.fromOffset(30, 34),
+			BackgroundTransparency = 1,
+			TextSize = 14,
+			Font = Enum.Font.Gotham,
+			Parent = searchHolder,
+		})
+		local search = make("TextBox", {
+			Text = "",
+			PlaceholderText = "Search player...",
+			PlaceholderColor3 = THEME.subtext,
+			Size = UDim2.new(1, -56, 1, 0),
+			Position = UDim2.fromOffset(28, 0),
+			BackgroundTransparency = 1,
+			ClearTextOnFocus = false,
+			Font = Enum.Font.Gotham,
+			TextSize = 13,
+			TextColor3 = THEME.text,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			Parent = searchHolder,
+		})
+		local clearBtn = make("TextButton", {
+			Text = "×",
+			Visible = false,
+			Size = UDim2.fromOffset(26, 34),
+			Position = UDim2.new(1, -26, 0, 0),
+			BackgroundTransparency = 1,
+			Font = Enum.Font.GothamBold,
+			TextSize = 16,
+			TextColor3 = THEME.subtext,
+			Parent = searchHolder,
+		})
+		search.Focused:Connect(function() tween(searchStroke, 0.15, { Color = THEME.accent }) end)
+		search.FocusLost:Connect(function() tween(searchStroke, 0.15, { Color = THEME.stroke }) end)
+		clearBtn.MouseButton1Click:Connect(function() search.Text = "" end)
+
+		local SORTS = {
+			{ label = "⬇ Most", key = "most" },
+			{ label = "⬆ Least", key = "least" },
+			{ label = "A–Z", key = "name" },
+		}
+		local sortIndex = 1
+		local sortBtn = make("TextButton", {
+			Text = SORTS[1].label,
+			Size = UDim2.fromOffset(94, 34),
+			Position = UDim2.new(1, -106, 0, 12),
+			BackgroundColor3 = THEME.panel,
+			AutoButtonColor = false,
+			Font = Enum.Font.GothamBold,
+			TextSize = 13,
+			TextColor3 = THEME.accent,
+			Parent = body,
+		}, { corner(9), stroke(THEME.stroke, 1) })
+		sortBtn.MouseEnter:Connect(function() tween(sortBtn, 0.15, { BackgroundColor3 = THEME.rowHover }) end)
+		sortBtn.MouseLeave:Connect(function() tween(sortBtn, 0.15, { BackgroundColor3 = THEME.panel }) end)
+
+		-- player list
+		local list = make("ScrollingFrame", {
+			Size = UDim2.new(1, -16, 1, -92),
+			Position = UDim2.fromOffset(12, 56),
+			BackgroundTransparency = 1,
+			BorderSizePixel = 0,
+			ScrollBarThickness = 4,
+			ScrollBarImageColor3 = THEME.stroke,
+			AutomaticCanvasSize = Enum.AutomaticSize.Y,
+			CanvasSize = UDim2.new(),
+			Parent = body,
+		}, {
+			make("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 6) }),
+			make("UIPadding", { PaddingRight = UDim.new(0, 8), PaddingBottom = UDim.new(0, 6) }),
+		})
+
+		local emptyLabel = make("TextLabel", {
+			Text = "",
+			Visible = false,
+			Size = UDim2.new(1, 0, 0, 60),
+			BackgroundTransparency = 1,
+			Font = Enum.Font.Gotham,
+			TextSize = 13,
+			TextColor3 = THEME.subtext,
+			TextWrapped = true,
+			LayoutOrder = 100000,
+			Parent = list,
+		})
+
+		-- footer
+		local footer = make("TextLabel", {
+			Text = "Click a player to copy  •  Left Ctrl to hide",
+			TextTruncate = Enum.TextTruncate.AtEnd,
+			Size = UDim2.new(1, -24, 0, 24),
+			Position = UDim2.new(0, 12, 1, -30),
+			BackgroundTransparency = 1,
+			Font = Enum.Font.Gotham,
+			TextSize = 11,
+			TextColor3 = THEME.subtext,
+			Parent = body,
+		})
+		local footerDefault = footer.Text
+		local footerToken = 0
+		local function flashFooter(text, color)
+			footerToken += 1
+			local token = footerToken
+			footer.Text, footer.TextColor3 = text, color
+			task.delay(1.6, function()
+				if footerToken == token then
+					footer.Text, footer.TextColor3 = footerDefault, THEME.subtext
+				end
+			end)
+		end
+
+		---------------------------------------------------------------- player rows
+
+		local rows = {} -- [player] = { frame, credits label, rank label, last value }
+
+		local function makeRow(player)
+			local isYou = player == LocalPlayer
+			local card = make("TextButton", {
+				Text = "",
+				AutoButtonColor = false,
+				Size = UDim2.new(1, 0, 0, 52),
+				BackgroundColor3 = THEME.row,
+				Parent = list,
+			}, { corner(10) })
+			local cardStroke = stroke(isYou and THEME.you or THEME.stroke, 1, isYou and 0.2 or 0.6)
+			cardStroke.Parent = card
+
+			local rank = make("TextLabel", {
+				Text = "",
+				Size = UDim2.fromOffset(28, 52),
+				Position = UDim2.fromOffset(4, 0),
+				BackgroundTransparency = 1,
+				Font = Enum.Font.GothamBold,
+				TextSize = 13,
+				TextColor3 = THEME.subtext,
+				Parent = card,
+			})
+
+			local avatarRing = make("Frame", {
+				Size = UDim2.fromOffset(38, 38),
+				Position = UDim2.fromOffset(34, 7),
+				BackgroundColor3 = THEME.panel,
+				Parent = card,
+			}, { corner(19) })
+			local ringStroke = stroke(THEME.stroke, 2)
+			ringStroke.Parent = avatarRing
+			make("ImageLabel", {
+				Image = "rbxthumb://type=AvatarHeadShot&id=" .. player.UserId .. "&w=150&h=150",
+				Size = UDim2.fromScale(1, 1),
+				BackgroundTransparency = 1,
+				Parent = avatarRing,
+			}, { corner(19) })
+
+			make("TextLabel", {
+				Text = player.DisplayName .. (isYou and "  (you)" or ""),
+				Size = UDim2.new(1, -190, 0, 18),
+				Position = UDim2.fromOffset(80, 9),
+				BackgroundTransparency = 1,
+				Font = Enum.Font.GothamBold,
+				TextSize = 14,
+				TextColor3 = isYou and THEME.you or THEME.text,
+				TextXAlignment = Enum.TextXAlignment.Left,
+				TextTruncate = Enum.TextTruncate.AtEnd,
+				Parent = card,
+			})
+			make("TextLabel", {
+				Text = "@" .. player.Name,
+				Size = UDim2.new(1, -190, 0, 14),
+				Position = UDim2.fromOffset(80, 28),
+				BackgroundTransparency = 1,
+				Font = Enum.Font.Gotham,
+				TextSize = 12,
+				TextColor3 = THEME.subtext,
+				TextXAlignment = Enum.TextXAlignment.Left,
+				TextTruncate = Enum.TextTruncate.AtEnd,
+				Parent = card,
+			})
+
+			local pill = make("Frame", {
+				Size = UDim2.fromOffset(100, 28),
+				Position = UDim2.new(1, -108, 0.5, -14),
+				BackgroundColor3 = Color3.fromRGB(50, 42, 22),
+				Parent = card,
+			}, { corner(14), stroke(THEME.accent, 1, 0.6) })
+			local creditsLabel = make("TextLabel", {
+				Text = "…",
+				Size = UDim2.new(1, -12, 1, 0),
+				Position = UDim2.fromOffset(6, 0),
+				BackgroundTransparency = 1,
+				Font = Enum.Font.GothamBold,
+				TextSize = 13,
+				TextColor3 = THEME.accent,
+				TextScaled = false,
+				TextTruncate = Enum.TextTruncate.AtEnd,
+				Parent = pill,
+			})
+
+			card.MouseEnter:Connect(function() tween(card, 0.15, { BackgroundColor3 = THEME.rowHover }) end)
+			card.MouseLeave:Connect(function() tween(card, 0.15, { BackgroundColor3 = THEME.row }) end)
+			card.MouseButton1Click:Connect(function()
+				if setclipboard then
+					setclipboard(player.Name)
+					flashFooter("Copied @" .. player.Name, THEME.up)
+				else
+					flashFooter("Your executor can't copy to clipboard", THEME.warn)
+				end
+				tween(card, 0.08, { BackgroundColor3 = THEME.accent }).Completed:Connect(function()
+					tween(card, 0.3, { BackgroundColor3 = THEME.row })
+				end)
+			end)
+
+			local row = { card = card, credits = creditsLabel, pill = pill, rank = rank, ring = ringStroke, value = nil }
+			rows[player] = row
+			return row
+		end
+
+		track(Players.PlayerRemoving:Connect(function(player)
+			local row = rows[player]
+			if row then
+				rows[player] = nil
+				row.card:Destroy()
+			end
+		end))
+
+		---------------------------------------------------------------- refresh
+
+		local running = true
+
+		-- rescan = look the credits up again (every 2 seconds); typing/sorting just reuses the last values
+		local function refresh(rescan)
+			local query = search.Text:lower():match("^%s*(.-)%s*$")
+			clearBtn.Visible = search.Text ~= ""
+
+			local all, shown, unknown, total = {}, 0, 0, 0
+			for _, player in ipairs(Players:GetPlayers()) do
+				local row = rows[player] or makeRow(player)
+				local credits = row.value
+				if rescan or credits == nil then credits = findCredits(player) end
+				local number = tonumber(credits)
+
+				-- flash green/red when someone's credits change
+				if row.value ~= nil and number and tonumber(row.value) and number ~= tonumber(row.value) then
+					local color = number > tonumber(row.value) and THEME.up or THEME.down
+					row.credits.TextColor3 = color
+					tween(row.credits, 1.2, { TextColor3 = THEME.accent })
+				end
+				row.value = credits
+				row.credits.Text = credits == nil and "?" or format(credits)
+
+				if credits == nil then unknown += 1 else total += number or 0 end
+				table.insert(all, { player = player, row = row, n = number })
+			end
+
+			-- ranks always go by most credits, whatever the sort order
+			table.sort(all, function(a, b) return (a.n or -math.huge) > (b.n or -math.huge) end)
+			for i, entry in ipairs(all) do
+				local medal = entry.n and MEDALS[i]
+				entry.row.rank.Text = entry.n and ("#" .. i) or "–"
+				entry.row.rank.TextColor3 = medal or THEME.subtext
+				entry.row.ring.Color = medal or THEME.stroke
+			end
+
+			local sortKey = SORTS[sortIndex].key
+			table.sort(all, function(a, b)
+				if sortKey == "name" then
+					return a.player.DisplayName:lower() < b.player.DisplayName:lower()
+				elseif sortKey == "least" then
+					return (a.n or math.huge) < (b.n or math.huge)
+				end
+				return (a.n or -math.huge) > (b.n or -math.huge)
+			end)
+
+			for i, entry in ipairs(all) do
+				local p = entry.player
+				local visible = query == ""
+					or p.DisplayName:lower():find(query, 1, true) ~= nil
+					or p.Name:lower():find(query, 1, true) ~= nil
+				entry.row.card.Visible = visible
+				entry.row.card.LayoutOrder = i
+				if visible then shown += 1 end
+			end
+
+			local count = #all
+			subtitle.Text = string.format("%d player%s  •  %s credits total", count, count == 1 and "" or "s", format(total))
+
+			if shown == 0 and query ~= "" then
+				emptyLabel.Text = "No players match \"" .. search.Text .. "\""
+				emptyLabel.TextColor3 = THEME.subtext
+				emptyLabel.Visible = true
+			elseif count > 0 and unknown == count then
+				emptyLabel.Text = "Couldn't find credits for anyone.\nThe game may not send them to your client."
+				emptyLabel.TextColor3 = THEME.warn
+				emptyLabel.Visible = true
+			else
+				emptyLabel.Visible = false
+			end
+		end
+
+		search:GetPropertyChangedSignal("Text"):Connect(function()
+			if running then refresh() end
+		end)
+		sortBtn.MouseButton1Click:Connect(function()
+			sortIndex = sortIndex % #SORTS + 1
+			sortBtn.Text = SORTS[sortIndex].label
+			refresh()
+		end)
+
+		---------------------------------------------------------------- window controls
+
+		-- drag by the title bar
+		local dragging, dragStart, startPos
+		bar.InputBegan:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+				dragging, dragStart, startPos = true, input.Position, frame.Position
+			end
+		end)
+		track(UserInputService.InputChanged:Connect(function(input)
+			if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+				local delta = input.Position - dragStart
+				frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+			end
+		end))
+		track(UserInputService.InputEnded:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+				dragging = false
+			end
+		end))
+
+		-- resize by dragging the grip in the bottom-right corner
+		local grip = make("TextButton", {
+			Text = "◢",
+			Size = UDim2.fromOffset(22, 22),
+			Position = UDim2.new(1, -22, 1, -22),
+			BackgroundTransparency = 1,
+			AutoButtonColor = false,
+			Font = Enum.Font.GothamBold,
+			TextSize = 14,
+			TextColor3 = THEME.stroke,
+			ZIndex = 10,
+			Parent = frame,
+		})
+		grip.MouseEnter:Connect(function() tween(grip, 0.15, { TextColor3 = THEME.accent }) end)
+		grip.MouseLeave:Connect(function() tween(grip, 0.15, { TextColor3 = THEME.stroke }) end)
+
+		local resizing, resizeStart, startSize
+		grip.InputBegan:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+				resizing, resizeStart, startSize = true, input.Position, Vector2.new(WIDTH, HEIGHT)
+			end
+		end)
+		track(UserInputService.InputChanged:Connect(function(input)
+			if resizing and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+				local delta = input.Position - resizeStart
+				WIDTH = math.clamp(startSize.X + delta.X, MIN_WIDTH, MAX_WIDTH)
+				HEIGHT = math.clamp(startSize.Y + delta.Y, MIN_HEIGHT, MAX_HEIGHT)
+				frame.Size = UDim2.fromOffset(WIDTH, HEIGHT)
+			end
+		end))
+		track(UserInputService.InputEnded:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+				resizing = false
+			end
+		end))
+
+		local minimized = false
+		minimizeBtn.MouseButton1Click:Connect(function()
+			minimized = not minimized
+			minimizeBtn.Text = minimized and "+" or "–"
+			grip.Visible = not minimized
+			tween(frame, 0.3, { Size = UDim2.fromOffset(WIDTH, minimized and BAR or HEIGHT) })
+		end)
+
+		local shownWindow = true
+		local function setShown(show)
+			shownWindow = show
+			if show then
+				frame.Visible = true
+				scale.Scale = 0.85
+				tween(scale, 0.25, { Scale = 1 })
+			else
+				tween(scale, 0.15, { Scale = 0.85 }).Completed:Connect(function()
+					if not shownWindow then frame.Visible = false end
+				end)
+			end
+		end
+
+		local keyConn = track(UserInputService.InputBegan:Connect(function(input, gameProcessed)
+			if gameProcessed then return end
+			if input.KeyCode == TOGGLE_KEY then setShown(not shownWindow) end
+		end))
+
+		closeBtn.MouseButton1Click:Connect(function()
+			running = false
+			keyConn:Disconnect()
+			tween(scale, 0.15, { Scale = 0.85 }).Completed:Connect(function()
+				gui:Destroy()
+			end)
+		end)
+
+		---------------------------------------------------------------- start
+
+		setShown(true)
+		while running and alive do
+			refresh(true)
+			task.wait(REFRESH)
+		end
+		-- the logger was stopped (re-executed or access removed): close the window too
+		if not alive then gui:Destroy() end
+	end
+	task.spawn(function()
+		local ok, err = xpcall(startCreditsViewer, debug.traceback)
+		if not ok then warn("[Logger] Credits viewer crashed: " .. tostring(err)) end
+	end)
+
+	print("[Logger] v13 running (chat cards + translation + announcements + credits viewer).")
 end
 
 local ok, err = xpcall(main, debug.traceback)
