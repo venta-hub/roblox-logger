@@ -1,4 +1,4 @@
--- Join/Leave/Chat/Announcement Logger + Credits Viewer (v13, server version)
+-- Join/Leave/Chat/Announcement Logger + Credits Viewer + Free Camera (v14, server version)
 -- After the key is accepted, a Log Channels panel asks for your own Discord webhooks (one box per
 -- log type). Logs go through the Cloudflare Worker, which checks the key on every log and only
 -- forwards to Discord webhook URLs, so without a valid key nothing gets sent.
@@ -1466,7 +1466,113 @@ local function main()
 		if not ok then warn("[Logger] Credits viewer crashed: " .. tostring(err)) end
 	end)
 
-	print("[Logger] v13 running (chat cards + translation + announcements + credits viewer).")
+	---------------------------------------------------------------- free camera
+	-- Press P to fly the camera anywhere on the map while your character stays put.
+	-- WASD to move, E/Space up, Q down, hold right mouse to look around,
+	-- Shift to go faster, scroll to change speed, P again to snap back to your character.
+	do
+		local RunService = game:GetService("RunService")
+		local UserInputService = game:GetService("UserInputService")
+		local ContextActionService = game:GetService("ContextActionService")
+
+		local TOGGLE_KEY = Enum.KeyCode.P
+		local LOOK_SPEED = 0.005 -- radians per pixel of mouse movement
+		local MOVE_KEYS = {
+			Enum.KeyCode.W, Enum.KeyCode.A, Enum.KeyCode.S, Enum.KeyCode.D,
+			Enum.KeyCode.E, Enum.KeyCode.Q, Enum.KeyCode.Space,
+			Enum.KeyCode.LeftShift, Enum.KeyCode.Up, Enum.KeyCode.Down, Enum.KeyCode.Left, Enum.KeyCode.Right,
+		}
+
+		local flying = false
+		local speed = 40 -- studs per second
+		local position, pitch, yaw
+		local saved -- the camera settings to put back afterwards
+
+		local function down(key) return UserInputService:IsKeyDown(key) end
+
+		local function update(dt)
+			local camera = workspace.CurrentCamera
+			if not alive or not camera then return end
+
+			-- look around while the right mouse button is held
+			if UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then
+				UserInputService.MouseBehavior = Enum.MouseBehavior.LockCurrentPosition
+				local delta = UserInputService:GetMouseDelta()
+				yaw -= delta.X * LOOK_SPEED
+				pitch = math.clamp(pitch - delta.Y * LOOK_SPEED, -1.55, 1.55)
+			else
+				UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+			end
+
+			local move = Vector3.zero
+			if down(Enum.KeyCode.W) or down(Enum.KeyCode.Up) then move += Vector3.new(0, 0, -1) end
+			if down(Enum.KeyCode.S) or down(Enum.KeyCode.Down) then move += Vector3.new(0, 0, 1) end
+			if down(Enum.KeyCode.A) or down(Enum.KeyCode.Left) then move += Vector3.new(-1, 0, 0) end
+			if down(Enum.KeyCode.D) or down(Enum.KeyCode.Right) then move += Vector3.new(1, 0, 0) end
+			local rise = 0
+			if down(Enum.KeyCode.E) or down(Enum.KeyCode.Space) then rise += 1 end
+			if down(Enum.KeyCode.Q) then rise -= 1 end
+
+			local rotation = CFrame.fromOrientation(pitch, yaw, 0)
+			local velocity = rotation:VectorToWorldSpace(move) + Vector3.new(0, rise, 0)
+			if velocity.Magnitude > 0 then
+				local boost = down(Enum.KeyCode.LeftShift) and 3 or 1
+				position += velocity.Unit * speed * boost * dt
+			end
+
+			camera.CameraType = Enum.CameraType.Scriptable
+			camera.CFrame = CFrame.new(position) * rotation
+		end
+
+		local function stopFlying()
+			if not flying then return end
+			flying = false
+			RunService:UnbindFromRenderStep("LoggerFreecam")
+			ContextActionService:UnbindAction("LoggerFreecam")
+			UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+			local camera = workspace.CurrentCamera
+			if camera and saved then
+				camera.CameraType = saved.type
+				camera.CameraSubject = saved.subject
+				camera.CFrame = saved.cframe
+			end
+		end
+
+		local function startFlying()
+			local camera = workspace.CurrentCamera
+			if flying or not camera then return end
+			flying = true
+			saved = { type = camera.CameraType, subject = camera.CameraSubject, cframe = camera.CFrame }
+			position = camera.CFrame.Position
+			pitch, yaw = camera.CFrame:ToOrientation()
+			-- swallow the movement keys so your character doesn't walk while the camera flies
+			ContextActionService:BindActionAtPriority("LoggerFreecam", function()
+				return Enum.ContextActionResult.Sink
+			end, false, Enum.ContextActionPriority.High.Value + 1, table.unpack(MOVE_KEYS))
+			RunService:BindToRenderStep("LoggerFreecam", Enum.RenderPriority.Camera.Value + 1, update)
+		end
+
+		track(UserInputService.InputBegan:Connect(function(input, gameProcessed)
+			if gameProcessed or not alive then return end -- ignore keys typed into chat/text boxes
+			if input.KeyCode == TOGGLE_KEY then
+				if flying then stopFlying() else startFlying() end
+			end
+		end))
+		-- scroll wheel changes fly speed
+		track(UserInputService.InputChanged:Connect(function(input)
+			if flying and input.UserInputType == Enum.UserInputType.MouseWheel then
+				speed = math.clamp(speed * (input.Position.Z > 0 and 1.25 or 0.8), 5, 500)
+			end
+		end))
+		-- re-executing or losing the key puts the camera back
+		task.spawn(function()
+			while alive do task.wait(0.5) end
+			stopFlying()
+		end)
+		print("[Logger] Free camera ready: press P to fly, P again to come back.")
+	end
+
+	print("[Logger] v14 running (chat cards + translation + announcements + credits viewer + free camera).")
 end
 
 local ok, err = xpcall(main, debug.traceback)
