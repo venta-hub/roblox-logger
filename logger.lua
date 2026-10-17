@@ -1,4 +1,4 @@
--- Join/Leave/Chat/Announcement Logger + Credits Viewer + Free Camera (v24, server version)
+-- Join/Leave/Chat/Announcement Logger + Credits Viewer + Free Camera (v25, server version)
 -- After the key is accepted, the Logger Panel opens (Right Ctrl hides/shows it unless you change
 -- the key): put your own Discord webhooks in it (one box per log type), switch each channel on/off,
 -- control the free camera, change keybinds, or terminate the whole script. Logs go through the Cloudflare Worker, which checks the key on every log and only
@@ -1467,8 +1467,12 @@ local function main()
 		local position, pitch, yaw
 		local saved -- the camera settings to put back afterwards
 
-		-- is the key set for this fly control held down?
-		local function down(control) return UserInputService:IsKeyDown(Enum.KeyCode[settings[control]]) end
+		-- is the key set for this fly control held down? Always no while you're typing in chat or
+		-- any text box, so typing doesn't move the camera
+		local function down(control)
+			if UserInputService:GetFocusedTextBox() then return false end
+			return UserInputService:IsKeyDown(Enum.KeyCode[settings[control]])
+		end
 
 		-- swallows the character keys plus the current fly keys, so nothing else reacts to them
 		local function sinkKeys()
@@ -1954,8 +1958,11 @@ local function main()
 				Parent = body,
 			})
 
-			-- dropdown of matching players that appears while you type (click one to go to them)
-			local MAX_SUGGESTIONS = 6
+			-- dropdown of players that appears when you click the box or type (click one to go to them);
+			-- your Roblox friends are listed first
+			local MAX_SUGGESTIONS = 8
+			local friendCache = {} -- [userId] = true/false once known
+			local refreshSuggestions -- set below; re-run once friend checks finish
 			local suggestBox = new("Frame", {
 				LayoutOrder = goStatus.LayoutOrder, -- sits between the name box and the status line
 				Size = UDim2.new(1, 0, 0, 0),
@@ -1997,6 +2004,23 @@ local function main()
 				end
 			end
 
+			-- is this player your Roblox friend? Asks Roblox once per player in the background;
+			-- until the answer arrives they count as not a friend
+			local function isFriend(player)
+				if player == Players.LocalPlayer then return false end
+				local known = friendCache[player.UserId]
+				if known ~= nil then return known end
+				friendCache[player.UserId] = false
+				task.spawn(function()
+					local ok, result = pcall(function() return Players.LocalPlayer:IsFriendsWith(player.UserId) end)
+					if ok and result then
+						friendCache[player.UserId] = true
+						if refreshSuggestions then refreshSuggestions() end
+					end
+				end)
+				return false
+			end
+
 			-- one row per matching player: avatar, display name and @username
 			local function suggestionRow(player, order)
 				local row = new("TextButton", {
@@ -2017,7 +2041,8 @@ local function main()
 				})
 				round(avatar, 15)
 				new("TextLabel", {
-					Text = player.DisplayName .. (player == Players.LocalPlayer and "  (you)" or ""),
+					Text = player.DisplayName .. (player == Players.LocalPlayer and "  (you)" or "")
+						.. (friendCache[player.UserId] and "  ⭐ Friend" or ""),
 					Size = UDim2.new(1, -50, 0, 18),
 					Position = UDim2.fromOffset(44, 4),
 					BackgroundTransparency = 1,
@@ -2053,27 +2078,35 @@ local function main()
 				end)
 			end
 
-			-- rebuilds the dropdown for what's typed: names that start with it first, then ones containing it
+			-- friends first, then A–Z by display name
+			local function byFriendThenName(a, b)
+				local fa, fb = isFriend(a), isFriend(b)
+				if fa ~= fb then return fa end
+				return a.DisplayName:lower() < b.DisplayName:lower()
+			end
+
+			-- rebuilds the dropdown: an empty box lists everyone in the server; otherwise names that
+			-- start with what's typed come first, then ones containing it (friends on top in each)
 			local function updateSuggestions()
 				for _, child in ipairs(suggestBox:GetChildren()) do
 					if child:IsA("TextButton") or child:IsA("TextLabel") then child:Destroy() end
 				end
-				local query = trim(nameBox.Text):lower():gsub("^@", "")
-				if query == "" or not nameBox:IsFocused() then
+				if not nameBox:IsFocused() then
 					suggestBox.Visible = false
 					return
 				end
+				local query = trim(nameBox.Text):lower():gsub("^@", "")
 				local starts, contains = {}, {}
 				for _, p in ipairs(Players:GetPlayers()) do
 					local name, display = p.Name:lower(), p.DisplayName:lower()
-					if name:sub(1, #query) == query or display:sub(1, #query) == query then
+					if query == "" or name:sub(1, #query) == query or display:sub(1, #query) == query then
 						table.insert(starts, p)
 					elseif name:find(query, 1, true) or display:find(query, 1, true) then
 						table.insert(contains, p)
 					end
 				end
-				table.sort(starts, function(a, b) return a.DisplayName:lower() < b.DisplayName:lower() end)
-				table.sort(contains, function(a, b) return a.DisplayName:lower() < b.DisplayName:lower() end)
+				table.sort(starts, byFriendThenName)
+				table.sort(contains, byFriendThenName)
 				for _, p in ipairs(contains) do table.insert(starts, p) end
 
 				if #starts == 0 then
@@ -2090,7 +2123,7 @@ local function main()
 					for i = 1, math.min(#starts, MAX_SUGGESTIONS) do suggestionRow(starts[i], i) end
 					if #starts > MAX_SUGGESTIONS then
 						new("TextLabel", {
-							Text = "+" .. (#starts - MAX_SUGGESTIONS) .. " more, keep typing",
+							Text = "+" .. (#starts - MAX_SUGGESTIONS) .. " more, type to narrow it down",
 							LayoutOrder = MAX_SUGGESTIONS + 1,
 							Size = UDim2.new(1, 0, 0, 18),
 							BackgroundTransparency = 1,
@@ -2102,6 +2135,9 @@ local function main()
 					end
 				end
 				suggestBox.Visible = true
+			end
+			refreshSuggestions = function()
+				if suggestBox.Visible then updateSuggestions() end
 			end
 
 			nameBox:GetPropertyChangedSignal("Text"):Connect(updateSuggestions)
@@ -2297,7 +2333,7 @@ local function main()
 		print("[Logger] Logger Panel open. " .. settings.panelKey .. " hides/shows it.")
 	end
 
-	print("[Logger] v24 running (" .. PRODUCT_NAMES[PRODUCT] .. " key).")
+	print("[Logger] v25 running (" .. PRODUCT_NAMES[PRODUCT] .. " key).")
 end
 
 local ok, err = xpcall(main, debug.traceback)
