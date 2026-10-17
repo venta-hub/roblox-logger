@@ -1801,42 +1801,51 @@ local function main()
 		round(frame, 14)
 		new("UIStroke", { Color = C.stroke, Thickness = 1.5, Parent = frame })
 
-		-- animated diagonal-line backdrop (black / silver theme, like the gif)
+		-- animated obsidian water-wave backdrop: dark layers that drift and bob like moving water
 		do
 			local backdrop = new("Frame", {
 				Size = UDim2.fromScale(1, 1),
-				BackgroundColor3 = C.bg,
+				BackgroundColor3 = Color3.fromRGB(5, 5, 8),
 				BorderSizePixel = 0,
 				ZIndex = 0,
 				ClipsDescendants = true,
 				Parent = frame,
 			})
-			local lines = {}
-			for i = 1, 10 do
-				local line = new("Frame", {
-					Size = UDim2.fromOffset(2, 1200),
-					Position = UDim2.new((i - 1) / 9, 0, 0.5, 0),
-					AnchorPoint = Vector2.new(0.5, 0.5),
-					Rotation = 45,
-					BackgroundColor3 = Color3.fromRGB(235, 238, 245),
-					BackgroundTransparency = 0.9,
+			local WAVE = ColorSequence.new(Color3.fromRGB(30, 32, 40), Color3.fromRGB(7, 7, 11))
+			for i = 1, 6 do
+				local y = (i - 1) / 6
+				local band = new("Frame", {
+					Size = UDim2.new(1.6, 0, 0, 130),
+					Position = UDim2.new(-0.3, 0, y, -8),
+					BackgroundColor3 = Color3.fromRGB(15, 16, 21),
+					BackgroundTransparency = 0.12,
 					BorderSizePixel = 0,
+					Rotation = -6,
 					ZIndex = 0,
 					Parent = backdrop,
 				})
-				table.insert(lines, line)
+				-- the gradient's light/dark banding is the wave crests; scrolling it = moving water
+				local grad = new("UIGradient", {
+					Color = WAVE,
+					Rotation = 80,
+					Offset = Vector2.new(-1, 0),
+					Transparency = NumberSequence.new({
+						NumberSequenceKeypoint.new(0, 0.95),
+						NumberSequenceKeypoint.new(0.2, 0.35),
+						NumberSequenceKeypoint.new(0.45, 0.95),
+						NumberSequenceKeypoint.new(0.68, 0.4),
+						NumberSequenceKeypoint.new(1, 0.95),
+					}),
+					Parent = band,
+				})
+				-- each layer drifts sideways at its own speed, and bobs up and down, forever
+				TweenService:Create(grad, TweenInfo.new(6 + i * 1.5, Enum.EasingStyle.Linear, Enum.EasingDirection.Out, -1), {
+					Offset = Vector2.new(1, 0),
+				}):Play()
+				TweenService:Create(band, TweenInfo.new(3 + i * 0.7, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {
+					Position = UDim2.new(-0.3, 0, y, 8),
+				}):Play()
 			end
-			-- faint shimmer so it feels alive
-			task.spawn(function()
-				while alive and backdrop.Parent do
-					for _, line in ipairs(lines) do
-						TweenService:Create(line, TweenInfo.new(1.4 + math.random(), Enum.EasingStyle.Sine), {
-							BackgroundTransparency = 0.82 + math.random() * 0.14,
-						}):Play()
-					end
-					task.wait(1.5)
-				end
-			end)
 		end
 
 		-- title bar: drag it to move the window
