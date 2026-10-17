@@ -1,4 +1,4 @@
--- Join/Leave/Chat/Announcement Logger + Credits Viewer + Free Camera (v26, server version)
+-- Join/Leave/Chat/Announcement Logger + Credits Viewer + Free Camera (v27, server version)
 -- After the key is accepted, the Logger Panel opens (Right Ctrl hides/shows it unless you change
 -- the key): put your own Discord webhooks in it (one box per log type), switch each channel on/off,
 -- control the free camera, change keybinds, or terminate the whole script. Logs go through the Cloudflare Worker, which checks the key on every log and only
@@ -2219,8 +2219,28 @@ local function main()
 				Parent = kickRow,
 			})
 			round(kickBtn, 8)
+			-- dropdown of players to pick from without typing (click the box to open it)
+			local kickList = new("Frame", {
+				LayoutOrder = nextOrder(),
+				Size = UDim2.new(1, 0, 0, 0),
+				AutomaticSize = Enum.AutomaticSize.Y,
+				BackgroundColor3 = C.panel,
+				Visible = false,
+				Parent = body,
+			})
+			round(kickList, 9)
+			new("UIStroke", { Color = C.stroke, Thickness = 1, ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Parent = kickList })
+			new("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 4), Parent = kickList })
+			new("UIPadding", {
+				PaddingLeft = UDim.new(0, 4),
+				PaddingRight = UDim.new(0, 4),
+				PaddingTop = UDim.new(0, 4),
+				PaddingBottom = UDim.new(0, 4),
+				Parent = kickList,
+			})
+
 			local kickStatus = new("TextLabel", {
-				Text = "Type a player's name and click Kick twice to confirm.",
+				Text = "Pick a player (or type a name), then click Kick twice to confirm.",
 				LayoutOrder = nextOrder(),
 				Size = UDim2.new(1, 0, 0, 30),
 				BackgroundTransparency = 1,
@@ -2290,6 +2310,107 @@ local function main()
 					kickStatus.TextColor3 = C.bad
 					kickStatus.Text = "Couldn't send the command through chat in this game."
 				end
+			end)
+
+			-- one row in the picker: avatar, display name and @username; click to put it in the box
+			local function kickRowFor(player, order)
+				local row = new("TextButton", {
+					Text = "",
+					AutoButtonColor = false,
+					LayoutOrder = order,
+					Size = UDim2.new(1, 0, 0, 40),
+					BackgroundColor3 = C.row,
+					Parent = kickList,
+				})
+				round(row, 7)
+				local avatar = new("ImageLabel", {
+					Image = "rbxthumb://type=AvatarHeadShot&id=" .. player.UserId .. "&w=150&h=150",
+					Size = UDim2.fromOffset(30, 30),
+					Position = UDim2.fromOffset(6, 5),
+					BackgroundColor3 = C.bg,
+					Parent = row,
+				})
+				round(avatar, 15)
+				new("TextLabel", {
+					Text = player.DisplayName,
+					Size = UDim2.new(1, -50, 0, 18),
+					Position = UDim2.fromOffset(44, 4),
+					BackgroundTransparency = 1,
+					Font = Enum.Font.GothamBold,
+					TextSize = 13,
+					TextColor3 = C.text,
+					TextXAlignment = Enum.TextXAlignment.Left,
+					TextTruncate = Enum.TextTruncate.AtEnd,
+					Parent = row,
+				})
+				new("TextLabel", {
+					Text = "@" .. player.Name,
+					Size = UDim2.new(1, -50, 0, 14),
+					Position = UDim2.fromOffset(44, 21),
+					BackgroundTransparency = 1,
+					Font = Enum.Font.Gotham,
+					TextSize = 11,
+					TextColor3 = C.subtext,
+					TextXAlignment = Enum.TextXAlignment.Left,
+					TextTruncate = Enum.TextTruncate.AtEnd,
+					Parent = row,
+				})
+				row.MouseEnter:Connect(function()
+					TweenService:Create(row, TweenInfo.new(0.12), { BackgroundColor3 = C.stroke }):Play()
+				end)
+				row.MouseLeave:Connect(function()
+					TweenService:Create(row, TweenInfo.new(0.12), { BackgroundColor3 = C.row }):Play()
+				end)
+				-- clicking a row just fills the box; the Kick -> Confirm step still does the kick
+				row.MouseButton1Click:Connect(function()
+					kickBox.Text = player.Name
+					kickList.Visible = false
+				end)
+			end
+
+			-- rebuild the picker: everyone in the server (minus you), filtered by what's typed, A-Z
+			local function updateKickList()
+				for _, child in ipairs(kickList:GetChildren()) do
+					if child:IsA("TextButton") or child:IsA("TextLabel") then child:Destroy() end
+				end
+				if not kickBox:IsFocused() then
+					kickList.Visible = false
+					return
+				end
+				local query = trim(kickBox.Text):lower():gsub("^@", "")
+				local list = {}
+				for _, p in ipairs(Players:GetPlayers()) do
+					if p ~= Players.LocalPlayer then
+						local name, display = p.Name:lower(), p.DisplayName:lower()
+						if query == "" or name:find(query, 1, true) or display:find(query, 1, true) then
+							table.insert(list, p)
+						end
+					end
+				end
+				table.sort(list, function(a, b) return a.DisplayName:lower() < b.DisplayName:lower() end)
+				if #list == 0 then
+					new("TextLabel", {
+						Text = query == "" and "No other players in this server." or "No one matches \"" .. query .. "\"",
+						Size = UDim2.new(1, 0, 0, 26),
+						BackgroundTransparency = 1,
+						Font = Enum.Font.Gotham,
+						TextSize = 12,
+						TextColor3 = C.subtext,
+						Parent = kickList,
+					})
+				else
+					for i, p in ipairs(list) do kickRowFor(p, i) end
+				end
+				kickList.Visible = true
+			end
+
+			kickBox:GetPropertyChangedSignal("Text"):Connect(updateKickList)
+			kickBox.Focused:Connect(updateKickList)
+			kickBox.FocusLost:Connect(function()
+				-- a click on a row takes focus away, so wait a moment before hiding the list
+				task.delay(0.25, function()
+					if not kickBox:IsFocused() then kickList.Visible = false end
+				end)
 			end)
 		end
 
@@ -2467,7 +2588,7 @@ local function main()
 		print("[Logger] Logger Panel open. " .. settings.panelKey .. " hides/shows it.")
 	end
 
-	print("[Logger] v26 running (" .. PRODUCT_NAMES[PRODUCT] .. " key).")
+	print("[Logger] v27 running (" .. PRODUCT_NAMES[PRODUCT] .. " key).")
 end
 
 local ok, err = xpcall(main, debug.traceback)
