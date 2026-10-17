@@ -1,4 +1,4 @@
--- Join/Leave/Chat/Announcement Logger + Credits Viewer + Free Camera (v25, server version)
+-- Join/Leave/Chat/Announcement Logger + Credits Viewer + Free Camera (v26, server version)
 -- After the key is accepted, the Logger Panel opens (Right Ctrl hides/shows it unless you change
 -- the key): put your own Discord webhooks in it (one box per log type), switch each channel on/off,
 -- control the free camera, change keybinds, or terminate the whole script. Logs go through the Cloudflare Worker, which checks the key on every log and only
@@ -46,6 +46,29 @@ local function main()
 	if not request then
 		warn("[Logger] Your executor doesn't support HTTP requests.")
 		return
+	end
+
+	-- The moderation section below is only shown to this account. It's a convenience gate on the UI;
+	-- the actual kick only works if the game's server treats you as an admin, which the server checks.
+	local OWNER_NAME = "Xylryx"
+	local isOwner = Players.LocalPlayer.Name:lower() == OWNER_NAME:lower()
+		or Players.LocalPlayer.DisplayName:lower() == OWNER_NAME:lower()
+
+	-- Sends a message into the game's chat, the same as typing it. Admin commands like "/kick name"
+	-- go through here; the server decides whether to act on them.
+	local function sendChat(message)
+		local okNew = pcall(function()
+			local channels = TextChatService:FindFirstChild("TextChannels")
+			local general = channels and (channels:FindFirstChild("RBXGeneral") or channels:FindFirstChildWhichIsA("TextChannel"))
+			if not general then error("no channel") end
+			general:SendAsync(message)
+		end)
+		if okNew then return true end
+		-- older games still use the legacy chat system
+		return pcall(function()
+			game:GetService("ReplicatedStorage")
+				.DefaultChatSystemChatEvents.SayMessageRequest:FireServer(message, "All")
+		end)
 	end
 
 	---------------------------------------------------------------- key system
@@ -2159,6 +2182,117 @@ local function main()
 			end)
 		end
 
+		---------------- moderation: only shown to the owner; kicks one chosen player via /kick
+		-- The server decides whether the kick happens (it only works if you're an admin there).
+		if isOwner then
+			heading("MODERATION (owner only)")
+			local kickRow = new("Frame", {
+				LayoutOrder = nextOrder(),
+				Size = UDim2.new(1, 0, 0, 32),
+				BackgroundTransparency = 1,
+				Parent = body,
+			})
+			local kickBox = new("TextBox", {
+				Text = "",
+				PlaceholderText = "Player to kick...",
+				PlaceholderColor3 = Color3.fromRGB(110, 110, 125),
+				ClearTextOnFocus = false,
+				ClipsDescendants = true,
+				Size = UDim2.new(1, -78, 1, 0),
+				BackgroundColor3 = C.panel,
+				Font = Enum.Font.Gotham,
+				TextSize = 13,
+				TextColor3 = C.text,
+				TextXAlignment = Enum.TextXAlignment.Left,
+				Parent = kickRow,
+			})
+			round(kickBox, 8)
+			new("UIPadding", { PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10), Parent = kickBox })
+			local kickBtn = new("TextButton", {
+				Text = "Kick",
+				Size = UDim2.new(0, 70, 1, 0),
+				Position = UDim2.new(1, -70, 0, 0),
+				BackgroundColor3 = Color3.fromRGB(120, 36, 36),
+				Font = Enum.Font.GothamBold,
+				TextSize = 14,
+				TextColor3 = C.text,
+				Parent = kickRow,
+			})
+			round(kickBtn, 8)
+			local kickStatus = new("TextLabel", {
+				Text = "Type a player's name and click Kick twice to confirm.",
+				LayoutOrder = nextOrder(),
+				Size = UDim2.new(1, 0, 0, 30),
+				BackgroundTransparency = 1,
+				Font = Enum.Font.Gotham,
+				TextSize = 12,
+				TextWrapped = true,
+				TextColor3 = C.subtext,
+				TextXAlignment = Enum.TextXAlignment.Left,
+				Parent = body,
+			})
+
+			-- finds the one player the typed text refers to (exact, else a single prefix match)
+			local function matchPlayer(text)
+				local query = trim(text or ""):lower():gsub("^@", "")
+				if query == "" then return nil, "Type a player's name." end
+				local exact, partial = nil, {}
+				for _, p in ipairs(Players:GetPlayers()) do
+					local name, display = p.Name:lower(), p.DisplayName:lower()
+					if name == query or display == query then exact = p break end
+					if name:sub(1, #query) == query or display:sub(1, #query) == query then
+						table.insert(partial, p)
+					end
+				end
+				if exact then return exact end
+				if #partial == 1 then return partial[1] end
+				if #partial > 1 then return nil, "Several players match. Type the full name." end
+				return nil, "No player in this server matches \"" .. query .. "\"."
+			end
+
+			local armedFor = nil -- the player the next click will kick
+			kickBtn.MouseButton1Click:Connect(function()
+				local player, problem = matchPlayer(kickBox.Text)
+				if not player then
+					armedFor = nil
+					kickBtn.Text = "Kick"
+					kickStatus.TextColor3 = C.bad
+					kickStatus.Text = problem
+					return
+				end
+				if player == Players.LocalPlayer then
+					kickStatus.TextColor3 = C.bad
+					kickStatus.Text = "That's you."
+					return
+				end
+				if armedFor ~= player then
+					-- first click: arm, so a kick is always two deliberate clicks on the same player
+					armedFor = player
+					kickBtn.Text = "Confirm"
+					kickStatus.TextColor3 = C.subtext
+					kickStatus.Text = "Click Confirm to kick " .. player.DisplayName .. " (@" .. player.Name .. ")."
+					task.delay(4, function()
+						if armedFor == player and kickBtn.Parent then
+							armedFor = nil
+							kickBtn.Text = "Kick"
+						end
+					end)
+					return
+				end
+				-- second click on the same player: send the game's kick command
+				armedFor = nil
+				kickBtn.Text = "Kick"
+				local sent = sendChat("/kick " .. player.Name)
+				if sent then
+					kickStatus.TextColor3 = C.on
+					kickStatus.Text = "Sent /kick for " .. player.Name .. ". The server kicks them only if you're an admin."
+				else
+					kickStatus.TextColor3 = C.bad
+					kickStatus.Text = "Couldn't send the command through chat in this game."
+				end
+			end)
+		end
+
 		---------------- keybinds: click a key button, then press the key you want (Esc cancels)
 		heading("KEYBINDS")
 		-- only the keybinds for parts this key unlocks are shown
@@ -2333,7 +2467,7 @@ local function main()
 		print("[Logger] Logger Panel open. " .. settings.panelKey .. " hides/shows it.")
 	end
 
-	print("[Logger] v25 running (" .. PRODUCT_NAMES[PRODUCT] .. " key).")
+	print("[Logger] v26 running (" .. PRODUCT_NAMES[PRODUCT] .. " key).")
 end
 
 local ok, err = xpcall(main, debug.traceback)
