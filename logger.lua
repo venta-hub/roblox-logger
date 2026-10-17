@@ -185,11 +185,11 @@ local function main()
 		local frame = new("Frame", {
 			Size = UDim2.fromOffset(320, 180),
 			Position = UDim2.new(0.5, -160, 0.5, -90),
-			BackgroundColor3 = Color3.fromRGB(18, 18, 24),
+			BackgroundColor3 = Color3.fromRGB(6, 6, 9),
 			Parent = gui,
 		})
 		round(frame, 14)
-		new("UIStroke", { Color = Color3.fromRGB(60, 60, 78), Thickness = 1.5, Parent = frame })
+		new("UIStroke", { Color = Color3.fromRGB(74, 76, 90), Thickness = 1.5, Parent = frame })
 		new("TextLabel", {
 			Text = "Enter Key",
 			Size = UDim2.new(1, -60, 0, 40),
@@ -205,7 +205,7 @@ local function main()
 			Text = "X",
 			Size = UDim2.fromOffset(30, 30),
 			Position = UDim2.new(1, -40, 0, 13),
-			BackgroundColor3 = Color3.fromRGB(34, 34, 44),
+			BackgroundColor3 = Color3.fromRGB(22, 22, 28),
 			Font = Enum.Font.GothamBold,
 			TextSize = 16,
 			TextColor3 = Color3.fromRGB(150, 150, 165),
@@ -219,7 +219,7 @@ local function main()
 			ClearTextOnFocus = false,
 			Size = UDim2.new(1, -32, 0, 38),
 			Position = UDim2.fromOffset(16, 56),
-			BackgroundColor3 = Color3.fromRGB(28, 28, 36),
+			BackgroundColor3 = Color3.fromRGB(14, 14, 18),
 			Font = Enum.Font.Gotham,
 			TextSize = 14,
 			TextColor3 = Color3.fromRGB(240, 240, 245),
@@ -230,10 +230,10 @@ local function main()
 			Text = "Unlock",
 			Size = UDim2.new(1, -32, 0, 36),
 			Position = UDim2.fromOffset(16, 104),
-			BackgroundColor3 = Color3.fromRGB(255, 196, 64),
+			BackgroundColor3 = Color3.fromRGB(205, 212, 228),
 			Font = Enum.Font.GothamBold,
 			TextSize = 14,
-			TextColor3 = Color3.fromRGB(30, 24, 10),
+			TextColor3 = Color3.fromRGB(14, 14, 18),
 			Parent = frame,
 		})
 		round(submit, 9)
@@ -792,15 +792,15 @@ local function main()
 		local LocalPlayer = Players.LocalPlayer
 
 		local THEME = {
-			bg = Color3.fromRGB(18, 18, 24),
-			panel = Color3.fromRGB(28, 28, 36),
-			row = Color3.fromRGB(34, 34, 44),
-			rowHover = Color3.fromRGB(46, 46, 60),
-			stroke = Color3.fromRGB(60, 60, 78),
+			bg = Color3.fromRGB(6, 6, 9),
+			panel = Color3.fromRGB(14, 14, 18),
+			row = Color3.fromRGB(22, 22, 28),
+			rowHover = Color3.fromRGB(32, 32, 40),
+			stroke = Color3.fromRGB(74, 76, 90),
 			text = Color3.fromRGB(240, 240, 245),
 			subtext = Color3.fromRGB(150, 150, 165),
-			accent = Color3.fromRGB(255, 196, 64), -- credit gold
-			accent2 = Color3.fromRGB(255, 140, 50),
+			accent = Color3.fromRGB(205, 212, 228), -- credit gold
+			accent2 = Color3.fromRGB(150, 156, 172),
 			you = Color3.fromRGB(90, 160, 255),
 			up = Color3.fromRGB(80, 220, 120),
 			down = Color3.fromRGB(240, 90, 90),
@@ -998,7 +998,7 @@ local function main()
 		}, {
 			corner(14),
 			make("UIGradient", {
-				Color = ColorSequence.new(Color3.fromRGB(70, 55, 25), THEME.panel),
+				Color = ColorSequence.new(Color3.fromRGB(40, 40, 50), THEME.panel),
 				Rotation = 90,
 			}),
 		})
@@ -1024,7 +1024,7 @@ local function main()
 			Text = "$",
 			Size = UDim2.fromOffset(36, 36),
 			Position = UDim2.fromOffset(10, 8),
-			BackgroundColor3 = Color3.fromRGB(60, 48, 20),
+			BackgroundColor3 = Color3.fromRGB(26, 26, 32),
 			Font = Enum.Font.GothamBold,
 			TextSize = 20,
 			Parent = bar,
@@ -1332,7 +1332,7 @@ local function main()
 			local pill = make("Frame", {
 				Size = UDim2.fromOffset(100, 28),
 				Position = UDim2.new(1, -108, 0.5, -14),
-				BackgroundColor3 = Color3.fromRGB(50, 42, 22),
+				BackgroundColor3 = Color3.fromRGB(26, 26, 32),
 				Parent = card,
 			}, { corner(14), stroke(THEME.accent, 1, 0.6) })
 			local creditsLabel = make("TextLabel", {
@@ -1466,7 +1466,7 @@ local function main()
 				local selected = key == mode.key
 				tween(button, 0.15, {
 					BackgroundColor3 = selected and THEME.accent or THEME.panel,
-					TextColor3 = selected and Color3.fromRGB(30, 24, 10) or THEME.subtext,
+					TextColor3 = selected and Color3.fromRGB(14, 14, 18) or THEME.subtext,
 				})
 			end
 			title.Text = mode.title
@@ -1778,13 +1778,13 @@ local function main()
 		local MIN_W, MIN_H, MAX_W, MAX_H = 300, 160, 900, 900
 		local W, H, BAR = 420, 480, 44
 		local C = {
-			bg = Color3.fromRGB(18, 18, 24),
-			panel = Color3.fromRGB(28, 28, 36),
-			row = Color3.fromRGB(34, 34, 44),
-			stroke = Color3.fromRGB(60, 60, 78),
+			bg = Color3.fromRGB(6, 6, 9),
+			panel = Color3.fromRGB(14, 14, 18),
+			row = Color3.fromRGB(22, 22, 28),
+			stroke = Color3.fromRGB(74, 76, 90),
 			text = Color3.fromRGB(240, 240, 245),
 			subtext = Color3.fromRGB(150, 150, 165),
-			accent = Color3.fromRGB(255, 196, 64),
+			accent = Color3.fromRGB(205, 212, 228),
 			on = Color3.fromRGB(80, 200, 120),
 			off = Color3.fromRGB(70, 70, 86),
 			bad = Color3.fromRGB(240, 90, 90),
@@ -1800,6 +1800,44 @@ local function main()
 		})
 		round(frame, 14)
 		new("UIStroke", { Color = C.stroke, Thickness = 1.5, Parent = frame })
+
+		-- animated diagonal-line backdrop (black / silver theme, like the gif)
+		do
+			local backdrop = new("Frame", {
+				Size = UDim2.fromScale(1, 1),
+				BackgroundColor3 = C.bg,
+				BorderSizePixel = 0,
+				ZIndex = 0,
+				ClipsDescendants = true,
+				Parent = frame,
+			})
+			local lines = {}
+			for i = 1, 10 do
+				local line = new("Frame", {
+					Size = UDim2.fromOffset(2, 1200),
+					Position = UDim2.new((i - 1) / 9, 0, 0.5, 0),
+					AnchorPoint = Vector2.new(0.5, 0.5),
+					Rotation = 45,
+					BackgroundColor3 = Color3.fromRGB(235, 238, 245),
+					BackgroundTransparency = 0.9,
+					BorderSizePixel = 0,
+					ZIndex = 0,
+					Parent = backdrop,
+				})
+				table.insert(lines, line)
+			end
+			-- faint shimmer so it feels alive
+			task.spawn(function()
+				while alive and backdrop.Parent do
+					for _, line in ipairs(lines) do
+						TweenService:Create(line, TweenInfo.new(1.4 + math.random(), Enum.EasingStyle.Sine), {
+							BackgroundTransparency = 0.82 + math.random() * 0.14,
+						}):Play()
+					end
+					task.wait(1.5)
+				end
+			end)
+		end
 
 		-- title bar: drag it to move the window
 		local bar = new("Frame", { Size = UDim2.new(1, 0, 0, BAR), BackgroundColor3 = C.panel, Parent = frame })
@@ -1964,7 +2002,7 @@ local function main()
 				BackgroundColor3 = C.accent,
 				Font = Enum.Font.GothamBold,
 				TextSize = 14,
-				TextColor3 = Color3.fromRGB(30, 24, 10),
+				TextColor3 = Color3.fromRGB(14, 14, 18),
 				Parent = body,
 			})
 			round(saveBtn, 9)
@@ -2095,7 +2133,7 @@ local function main()
 				BackgroundColor3 = C.accent,
 				Font = Enum.Font.GothamBold,
 				TextSize = 14,
-				TextColor3 = Color3.fromRGB(30, 24, 10),
+				TextColor3 = Color3.fromRGB(14, 14, 18),
 				Parent = goRow,
 			})
 			round(goBtn, 8)
@@ -2846,7 +2884,7 @@ local function main()
 				kick = { tag = "KICK", verb = "kicked", color = C.accent },
 				ban = { tag = "BAN", verb = "banned", color = C.bad },
 				unban = { tag = "UNBAN", verb = "unbanned", color = C.on },
-				announcement = { tag = "NOTICE", color = Color3.fromRGB(241, 196, 15) },
+				announcement = { tag = "NOTICE", color = Color3.fromRGB(180, 185, 200) },
 			}
 
 			-- short "2m" / "3h" style age from the action's unix timestamp
