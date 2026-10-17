@@ -1,4 +1,4 @@
--- Join/Leave/Chat/Announcement Logger + Credits Viewer + Free Camera (v19, server version)
+-- Join/Leave/Chat/Announcement Logger + Credits Viewer + Free Camera (v20, server version)
 -- After the key is accepted, the Logger Panel opens (Right Ctrl hides/shows it unless you change
 -- the key): put your own Discord webhooks in it (one box per log type), switch each channel on/off,
 -- control the free camera, change keybinds, or terminate the whole script. Logs go through the Cloudflare Worker, which checks the key on every log and only
@@ -99,6 +99,8 @@ local function main()
 	-- For one-time keys the server hands out a session ID when the script starts; every later
 	-- request has to carry it. (Normal keys don't use one.)
 	local SESSION
+	-- what the key unlocks, as told by the server: "bundle", "logger" or "credits"
+	local PRODUCT = "bundle"
 
 	-- starts a run with this key: returns (true) if it's valid, or (false, reason)
 	local function checkKey(key)
@@ -107,6 +109,7 @@ local function main()
 		local status, body = callServer("/check", { key = key, userId = Players.LocalPlayer.UserId, start = true })
 		if status == 200 then
 			SESSION = body.session
+			if body.product == "logger" or body.product == "credits" then PRODUCT = body.product end
 			return true
 		end
 		if status == nil then return false, "Couldn't reach the key server. Try again." end
@@ -274,6 +277,14 @@ local function main()
 	end
 	print("[Logger] Key accepted.")
 
+	-- which parts of the script this key unlocks
+	local HAS_LOGGER = PRODUCT == "bundle" or PRODUCT == "logger"
+	local HAS_CREDITS = PRODUCT == "bundle" or PRODUCT == "credits"
+	local HAS_FLY = PRODUCT == "bundle"
+	local PRODUCT_NAMES = { bundle = "Bundle", logger = "Logger", credits = "Credits & Hours" }
+	print("[Logger] " .. PRODUCT_NAMES[PRODUCT] .. " key: logger " .. (HAS_LOGGER and "on" or "off")
+		.. ", credits/hours " .. (HAS_CREDITS and "on" or "off") .. ", free camera " .. (HAS_FLY and "on" or "off") .. ".")
+
 	---------------------------------------------------------------- channels and settings
 	-- Your Discord webhooks (one per log type) and the on/off toggles are set in the Logger Panel
 	-- (built at the bottom of this script). Both are saved to files, so they're remembered next time.
@@ -352,7 +363,9 @@ local function main()
 	local keybinds = { listening = false }
 
 	-- the webhook a log of this kind should go to right now, or nil if it's off / not set
+	-- (always nil when the key doesn't include the logger, which switches all logging off)
 	local function activeWebhook(kind)
+		if not HAS_LOGGER then return nil end
 		if settings.enabled[kind] == false then return nil end
 		local url = urls[kind]
 		if not url and kind == "announcement" then url = urls.chat end
@@ -366,7 +379,7 @@ local function main()
 		end
 		return #on > 0 and table.concat(on, ", ") or "nothing (set webhooks in the Logger Panel)"
 	end
-	print("[Logger] Logging to Discord:", describeChannels())
+	if HAS_LOGGER then print("[Logger] Logging to Discord:", describeChannels()) end
 
 	local gameName = "Unknown"
 	pcall(function()
@@ -466,6 +479,7 @@ local function main()
 	end
 
 	local function send(kind, title, color, player)
+		if not HAS_LOGGER then return end
 		saveToFile(kind == "join" and "JOINED" or "LEFT", player)
 		if not activeWebhook(kind) then return end
 		fetchAvatars({ [player.UserId] = true })
@@ -1476,10 +1490,12 @@ local function main()
 			task.wait(REFRESH)
 		end
 	end
-	task.spawn(function()
-		local ok, err = xpcall(startCreditsViewer, debug.traceback)
-		if not ok then warn("[Logger] Credits viewer crashed: " .. tostring(err)) end
-	end)
+	if HAS_CREDITS then
+		task.spawn(function()
+			local ok, err = xpcall(startCreditsViewer, debug.traceback)
+			if not ok then warn("[Logger] Credits viewer crashed: " .. tostring(err)) end
+		end)
+	end
 
 	---------------------------------------------------------------- free camera
 	-- Press the fly key (P unless you change it in the Logger Panel) or use the panel's Fly toggle
@@ -1583,6 +1599,7 @@ local function main()
 		end
 
 		function freecam.set(on)
+			if on and not HAS_FLY then return end -- only bundle keys include the free camera
 			if on then startFlying() else stopFlying() end
 			if freecam.onChange then freecam.onChange(flying) end
 		end
@@ -1594,7 +1611,7 @@ local function main()
 
 		track(UserInputService.InputBegan:Connect(function(input, gameProcessed)
 			if gameProcessed or not alive or keybinds.listening then return end -- ignore chat typing
-			if keyIs(input, "flyKey") then
+			if HAS_FLY and keyIs(input, "flyKey") then
 				freecam.set(not flying)
 			end
 		end))
@@ -1606,7 +1623,9 @@ local function main()
 		end))
 		-- terminating, re-executing or losing the key puts the camera back
 		onStop(stopFlying)
-		print("[Logger] Free camera ready: press " .. settings.flyKey .. " to fly, again to come back.")
+		if HAS_FLY then
+			print("[Logger] Free camera ready: press " .. settings.flyKey .. " to fly, again to come back.")
+		end
 	end
 
 	---------------------------------------------------------------- logger panel
@@ -1653,7 +1672,7 @@ local function main()
 			Parent = bar,
 		})
 		new("TextLabel", {
-			Text = "⚙  Logger Panel",
+			Text = "⚙  " .. PRODUCT_NAMES[PRODUCT] .. " Panel",
 			Size = UDim2.new(1, -60, 1, 0),
 			Position = UDim2.fromOffset(14, 0),
 			BackgroundTransparency = 1,
@@ -1762,155 +1781,163 @@ local function main()
 		end
 
 		---------------- log channels: a toggle and a webhook box each
-		heading("LOG CHANNELS")
-		local boxes = {}
-		for _, channel in ipairs(CHANNELS) do
-			local row = new("Frame", {
+		if HAS_LOGGER then -- only keys that include the logger get the channel settings
+			heading("LOG CHANNELS")
+			local boxes = {}
+			for _, channel in ipairs(CHANNELS) do
+				local row = new("Frame", {
+					LayoutOrder = nextOrder(),
+					Size = UDim2.new(1, 0, 0, 62),
+					BackgroundTransparency = 1,
+					Parent = body,
+				})
+				label(row, channel.label .. (channel.kind == "announcement" and "  (empty = chat channel)" or ""), 54)
+				makeSwitch(row, settings.enabled[channel.kind] ~= false, function(on)
+					settings.enabled[channel.kind] = on
+					saveSettings()
+					print("[Logger]", channel.label, on and "ON." or "OFF.", "Logging to Discord:", describeChannels())
+				end)
+				local box = new("TextBox", {
+					Text = urls[channel.kind] or "",
+					PlaceholderText = "https://discord.com/api/webhooks/...",
+					PlaceholderColor3 = Color3.fromRGB(110, 110, 125),
+					ClearTextOnFocus = false,
+					ClipsDescendants = true,
+					Size = UDim2.new(1, 0, 0, 32),
+					Position = UDim2.fromOffset(0, 28),
+					BackgroundColor3 = C.panel,
+					Font = Enum.Font.Gotham,
+					TextSize = 13,
+					TextColor3 = C.text,
+					TextXAlignment = Enum.TextXAlignment.Left,
+					Parent = row,
+				})
+				round(box, 8)
+				new("UIPadding", { PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10), Parent = box })
+				boxes[channel.kind] = box
+			end
+
+			local saveBtn = new("TextButton", {
+				Text = "Save webhooks",
 				LayoutOrder = nextOrder(),
-				Size = UDim2.new(1, 0, 0, 62),
-				BackgroundTransparency = 1,
+				Size = UDim2.new(1, 0, 0, 34),
+				BackgroundColor3 = C.accent,
+				Font = Enum.Font.GothamBold,
+				TextSize = 14,
+				TextColor3 = Color3.fromRGB(30, 24, 10),
 				Parent = body,
 			})
-			label(row, channel.label .. (channel.kind == "announcement" and "  (empty = chat channel)" or ""), 54)
-			makeSwitch(row, settings.enabled[channel.kind] ~= false, function(on)
-				settings.enabled[channel.kind] = on
-				saveSettings()
-				print("[Logger]", channel.label, on and "ON." or "OFF.", "Logging to Discord:", describeChannels())
-			end)
-			local box = new("TextBox", {
-				Text = urls[channel.kind] or "",
-				PlaceholderText = "https://discord.com/api/webhooks/...",
-				PlaceholderColor3 = Color3.fromRGB(110, 110, 125),
-				ClearTextOnFocus = false,
-				ClipsDescendants = true,
-				Size = UDim2.new(1, 0, 0, 32),
-				Position = UDim2.fromOffset(0, 28),
-				BackgroundColor3 = C.panel,
+			round(saveBtn, 9)
+			local status = new("TextLabel", {
+				Text = next(urls) and "Toggles work straight away. Press Save after changing a webhook."
+					or "Paste your Discord webhooks above and press Save.",
+				LayoutOrder = nextOrder(),
+				Size = UDim2.new(1, 0, 0, 30),
+				BackgroundTransparency = 1,
 				Font = Enum.Font.Gotham,
-				TextSize = 13,
-				TextColor3 = C.text,
+				TextSize = 12,
+				TextWrapped = true,
+				TextColor3 = C.subtext,
 				TextXAlignment = Enum.TextXAlignment.Left,
-				Parent = row,
+				Parent = body,
 			})
-			round(box, 8)
-			new("UIPadding", { PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10), Parent = box })
-			boxes[channel.kind] = box
-		end
-
-		local saveBtn = new("TextButton", {
-			Text = "Save webhooks",
-			LayoutOrder = nextOrder(),
-			Size = UDim2.new(1, 0, 0, 34),
-			BackgroundColor3 = C.accent,
-			Font = Enum.Font.GothamBold,
-			TextSize = 14,
-			TextColor3 = Color3.fromRGB(30, 24, 10),
-			Parent = body,
-		})
-		round(saveBtn, 9)
-		local status = new("TextLabel", {
-			Text = next(urls) and "Toggles work straight away. Press Save after changing a webhook."
-				or "Paste your Discord webhooks above and press Save.",
-			LayoutOrder = nextOrder(),
-			Size = UDim2.new(1, 0, 0, 30),
-			BackgroundTransparency = 1,
-			Font = Enum.Font.Gotham,
-			TextSize = 12,
-			TextWrapped = true,
-			TextColor3 = C.subtext,
-			TextXAlignment = Enum.TextXAlignment.Left,
-			Parent = body,
-		})
-		local function setStatus(text, color)
-			status.Text = text
-			status.TextColor3 = color or C.subtext
-		end
-
-		local saving = false
-		saveBtn.MouseButton1Click:Connect(function()
-			if saving then return end
-			saving = true
-			local newUrls, problem = {}, nil
-			for _, channel in ipairs(CHANNELS) do
-				local url = trim(boxes[channel.kind].Text)
-				if url ~= "" then
-					if not isWebhook(url) then
-						problem = channel.label .. ": that isn't a Discord webhook URL."
-						break
-					end
-					newUrls[channel.kind] = url
-				end
+			local function setStatus(text, color)
+				status.Text = text
+				status.TextColor3 = color or C.subtext
 			end
-			if not problem then
-				setStatus("Checking webhooks...")
+
+			local saving = false
+			saveBtn.MouseButton1Click:Connect(function()
+				if saving then return end
+				saving = true
+				local newUrls, problem = {}, nil
 				for _, channel in ipairs(CHANNELS) do
-					local url = newUrls[channel.kind]
-					if url and url ~= urls[channel.kind] then -- only check the ones that changed
-						local works, reason = webhookWorks(url)
-						if not works then
-							problem = channel.label .. ": " .. reason
+					local url = trim(boxes[channel.kind].Text)
+					if url ~= "" then
+						if not isWebhook(url) then
+							problem = channel.label .. ": that isn't a Discord webhook URL."
 							break
+						end
+						newUrls[channel.kind] = url
+					end
+				end
+				if not problem then
+					setStatus("Checking webhooks...")
+					for _, channel in ipairs(CHANNELS) do
+						local url = newUrls[channel.kind]
+						if url and url ~= urls[channel.kind] then -- only check the ones that changed
+							local works, reason = webhookWorks(url)
+							if not works then
+								problem = channel.label .. ": " .. reason
+								break
+							end
 						end
 					end
 				end
-			end
-			if problem then
-				setStatus(problem, C.bad)
-				shake(frame)
-			else
-				urls = newUrls
-				writeJson(WEBHOOK_FILE, urls)
-				setStatus("Saved! Logging to Discord: " .. describeChannels(), C.on)
-				print("[Logger] Webhooks saved. Logging to Discord:", describeChannels())
-			end
-			saving = false
-		end)
-
-		---------------- free camera: on/off toggle and the key that toggles it
-		heading("FREE CAMERA")
-		local flyRow = new("Frame", {
-			LayoutOrder = nextOrder(),
-			Size = UDim2.new(1, 0, 0, 24),
-			BackgroundTransparency = 1,
-			Parent = body,
-		})
-		label(flyRow, "Fly", 54)
-		local flySwitch = makeSwitch(flyRow, freecam.isOn(), function(on)
-			freecam.set(on)
-		end)
-		-- keep the toggle in step when flying is switched with the key
-		freecam.onChange = function(on)
-			if flySwitch.value ~= on then flySwitch.set(on) end
+				if problem then
+					setStatus(problem, C.bad)
+					shake(frame)
+				else
+					urls = newUrls
+					writeJson(WEBHOOK_FILE, urls)
+					setStatus("Saved! Logging to Discord: " .. describeChannels(), C.on)
+					print("[Logger] Webhooks saved. Logging to Discord:", describeChannels())
+				end
+				saving = false
+			end)
 		end
 
-		new("TextLabel", {
-			Text = "Hold right mouse to look around, scroll to change speed. Movement keys are in KEYBINDS below.",
-			LayoutOrder = nextOrder(),
-			Size = UDim2.new(1, 0, 0, 30),
-			BackgroundTransparency = 1,
-			Font = Enum.Font.Gotham,
-			TextSize = 12,
-			TextWrapped = true,
-			TextColor3 = C.subtext,
-			TextXAlignment = Enum.TextXAlignment.Left,
-			TextYAlignment = Enum.TextYAlignment.Top,
-			Parent = body,
-		})
+		---------------- free camera: on/off toggle and the key that toggles it
+		if HAS_FLY then -- only bundle keys include the free camera
+			heading("FREE CAMERA")
+			local flyRow = new("Frame", {
+				LayoutOrder = nextOrder(),
+				Size = UDim2.new(1, 0, 0, 24),
+				BackgroundTransparency = 1,
+				Parent = body,
+			})
+			label(flyRow, "Fly", 54)
+			local flySwitch = makeSwitch(flyRow, freecam.isOn(), function(on)
+				freecam.set(on)
+			end)
+			-- keep the toggle in step when flying is switched with the key
+			freecam.onChange = function(on)
+				if flySwitch.value ~= on then flySwitch.set(on) end
+			end
+
+			new("TextLabel", {
+				Text = "Hold right mouse to look around, scroll to change speed. Movement keys are in KEYBINDS below.",
+				LayoutOrder = nextOrder(),
+				Size = UDim2.new(1, 0, 0, 30),
+				BackgroundTransparency = 1,
+				Font = Enum.Font.Gotham,
+				TextSize = 12,
+				TextWrapped = true,
+				TextColor3 = C.subtext,
+				TextXAlignment = Enum.TextXAlignment.Left,
+				TextYAlignment = Enum.TextYAlignment.Top,
+				Parent = body,
+			})
+		end
 
 		---------------- keybinds: click a key button, then press the key you want (Esc cancels)
 		heading("KEYBINDS")
-		local KEYBIND_ROWS = {
-			{ name = "panelKey", text = "Open/close this panel" },
-			{ name = "creditsKey", text = "Open/close credits window" },
-			{ name = "flyKey", text = "Fly on/off" },
-			{ name = "flyForward", text = "Fly forward" },
-			{ name = "flyBack", text = "Fly back" },
-			{ name = "flyLeft", text = "Fly left" },
-			{ name = "flyRight", text = "Fly right" },
-			{ name = "flyUp", text = "Fly up" },
-			{ name = "flyDown", text = "Fly down" },
-			{ name = "flyFast", text = "Fly faster (hold)" },
-		}
+		-- only the keybinds for parts this key unlocks are shown
+		local KEYBIND_ROWS = {}
+		for _, bind in ipairs({
+			{ name = "panelKey", text = "Open/close this panel", on = true },
+			{ name = "creditsKey", text = "Open/close credits window", on = HAS_CREDITS },
+			{ name = "flyKey", text = "Fly on/off", on = HAS_FLY },
+			{ name = "flyForward", text = "Fly forward", on = HAS_FLY },
+			{ name = "flyBack", text = "Fly back", on = HAS_FLY },
+			{ name = "flyLeft", text = "Fly left", on = HAS_FLY },
+			{ name = "flyRight", text = "Fly right", on = HAS_FLY },
+			{ name = "flyUp", text = "Fly up", on = HAS_FLY },
+			{ name = "flyDown", text = "Fly down", on = HAS_FLY },
+			{ name = "flyFast", text = "Fly faster (hold)", on = HAS_FLY },
+		}) do
+			if bind.on then table.insert(KEYBIND_ROWS, bind) end
+		end
 		local function keybindRow(bind)
 			local row = new("Frame", {
 				LayoutOrder = nextOrder(),
@@ -2067,7 +2094,7 @@ local function main()
 		print("[Logger] Logger Panel open. " .. settings.panelKey .. " hides/shows it.")
 	end
 
-	print("[Logger] v19 running (logs + credits viewer + free camera + Logger Panel).")
+	print("[Logger] v20 running (" .. PRODUCT_NAMES[PRODUCT] .. " key).")
 end
 
 local ok, err = xpcall(main, debug.traceback)
