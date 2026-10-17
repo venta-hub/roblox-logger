@@ -1811,42 +1811,36 @@ local function main()
 				ClipsDescendants = true,
 				Parent = frame,
 			})
-			-- brighter so the waves actually read on the dark panel; still a cold obsidian tone
-			local SHEEN = ColorSequence.new(Color3.fromRGB(255, 255, 255), Color3.fromRGB(58, 64, 84))
-			for i = 1, 8 do
-				local y = (i - 1) / 8 - 0.05
+			-- broad soft horizontal streaks of cold light on black = obsidian water sheen,
+			-- big enough to actually see; they bob and drift so the water looks alive
+			local SHEEN = ColorSequence.new(Color3.fromRGB(255, 255, 255), Color3.fromRGB(110, 122, 150))
+			for i = 1, 9 do
+				local y = (i - 1) / 9 - 0.02
+				local dir = (i % 2 == 0) and 1 or -1
 				local band = new("Frame", {
-					Size = UDim2.new(1.7, 0, 0, 150),
-					Position = UDim2.new(-0.35, 0, y, 0),
-					BackgroundColor3 = Color3.fromRGB(66, 74, 98),
-					BackgroundTransparency = 0.22,
+					Size = UDim2.new(1.5, 0, 0, 74),
+					Position = UDim2.new(-0.25, 0, y, 0),
+					BackgroundColor3 = Color3.fromRGB(74, 84, 112),
+					BackgroundTransparency = 0.4,
 					BorderSizePixel = 0,
-					Rotation = -5,
+					Rotation = -4,
 					ZIndex = 0,
 					Parent = backdrop,
 				})
-				-- the gradient carves the wave crests/troughs; scrolling it sideways = moving water
-				local grad = new("UIGradient", {
+				-- fade the streak's top and bottom edges so it reads as a soft wave of light
+				new("UIGradient", {
 					Color = SHEEN,
-					Rotation = 74,
-					Offset = Vector2.new(-1, 0),
+					Rotation = 90,
 					Transparency = NumberSequence.new({
-						NumberSequenceKeypoint.new(0, 0.92),
-						NumberSequenceKeypoint.new(0.16, 0.2),
-						NumberSequenceKeypoint.new(0.34, 0.92),
-						NumberSequenceKeypoint.new(0.52, 0.25),
-						NumberSequenceKeypoint.new(0.72, 0.92),
-						NumberSequenceKeypoint.new(0.88, 0.3),
-						NumberSequenceKeypoint.new(1, 0.92),
+						NumberSequenceKeypoint.new(0, 1),
+						NumberSequenceKeypoint.new(0.5, 0.12),
+						NumberSequenceKeypoint.new(1, 1),
 					}),
 					Parent = band,
 				})
-				-- each layer drifts sideways at its own speed, and bobs up and down, forever
-				TweenService:Create(grad, TweenInfo.new(7 + i * 1.3, Enum.EasingStyle.Linear, Enum.EasingDirection.Out, -1), {
-					Offset = Vector2.new(1, 0),
-				}):Play()
-				TweenService:Create(band, TweenInfo.new(3 + i * 0.6, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {
-					Position = UDim2.new(-0.35, 0, y + 0.02, 0),
+				-- bob up/down and drift sideways, each streak at its own pace, forever
+				TweenService:Create(band, TweenInfo.new(2.6 + i * 0.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {
+					Position = UDim2.new(-0.25 + 0.06 * dir, 0, y + 0.035, 0),
 				}):Play()
 			end
 		end
