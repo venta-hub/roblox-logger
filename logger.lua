@@ -48,11 +48,10 @@ local function main()
 		return
 	end
 
-	-- The moderation section below is only shown to this account. It's a convenience gate on the UI;
-	-- the actual kick only works if the game's server treats you as an admin, which the server checks.
-	local OWNER_NAME = "Xylryx"
-	local isOwner = Players.LocalPlayer.Name:lower() == OWNER_NAME:lower()
-		or Players.LocalPlayer.DisplayName:lower() == OWNER_NAME:lower()
+	-- The moderation section below is shown to anyone whose key includes the logger (bundle or
+	-- logger keys), since the Logger Panel itself only opens for those keys. It's a convenience
+	-- gate on the UI; the actual kick only works if the game's server treats you as an admin,
+	-- which the server checks.
 
 	-- Sends a message into the game's chat, the same as typing it. Admin commands like "/kick name"
 	-- go through here; the server decides whether to act on them.
@@ -2286,10 +2285,10 @@ local function main()
 			end)
 		end
 
-		---------------- moderation: only shown to the owner; kicks one chosen player via /kick
+		---------------- moderation: shown to all logger/bundle keys; kicks one chosen player via /kick
 		-- The server decides whether the kick happens (it only works if you're an admin there).
-		if isOwner then
-			heading("MODERATION (owner only)")
+		do
+			heading("MODERATION (moderator only)")
 			local kickRow = new("Frame", {
 				LayoutOrder = nextOrder(),
 				Size = UDim2.new(1, 0, 0, 32),
