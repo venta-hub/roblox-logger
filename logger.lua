@@ -460,6 +460,28 @@ local function main()
 		end
 	end
 
+	-- Records a moderation action or announcement into the shared ACTIONS feed on the server, so
+	-- everyone running the logger in this game sees it in the panel. kind is "kick", "ban" or
+	-- "announcement"; target is the affected player (blank for announcements); text is the message.
+	-- Runs in its own thread so it never blocks the UI, and failures are quiet (the feed is a nicety).
+	local function recordAction(kind, target, text)
+		if not alive or not HAS_LOGGER then return end
+		task.spawn(function()
+			callServer("/action", {
+				key = KEY,
+				userId = Players.LocalPlayer.UserId,
+				session = SESSION,
+				placeId = game.PlaceId,
+				game = gameName,
+				kind = kind,
+				moderator = Players.LocalPlayer.Name,
+				moderatorDisplay = Players.LocalPlayer.DisplayName,
+				target = target or "",
+				text = text or "",
+			})
+		end)
+	end
+
 	-- Avatar headshots: looks up image URLs for any users we don't have yet (one request for all of them)
 	local avatarCache = {}
 	local function fetchAvatars(userIds)
@@ -680,7 +702,7 @@ local function main()
 		end
 
 		local function check(label)
-			if not activeWebhook("announcement") then return end -- announcements are off
+			if not HAS_LOGGER then return end -- credits-only keys don't detect announcements
 			if busy[label] then return end
 			if not getSender(label.Text) then return end
 			busy[label] = true
@@ -707,6 +729,12 @@ local function main()
 			local key = senderName .. "\0" .. body
 			if recent[key] and os.clock() - recent[key] < 15 then return end
 			recent[key] = os.clock()
+
+			-- Always feed the shared ACTIONS panel, whether or not the Discord announcement channel is on.
+			recordAction("announcement", senderName, body)
+
+			-- The rest is the Discord card; skip it if that channel's toggle is off.
+			if not activeWebhook("announcement") then return end
 			-- The card's title is the sender's name exactly as the popup shows it ("Message from Xylryx").
 			-- If that name belongs to someone in this server, their avatar, username and ID are added too.
 			local title = "📢 Message from " .. senderName
@@ -2297,11 +2325,11 @@ local function main()
 			})
 			local kickBox = new("TextBox", {
 				Text = "",
-				PlaceholderText = "Player to kick...",
+				PlaceholderText = "Player to kick / ban...",
 				PlaceholderColor3 = Color3.fromRGB(110, 110, 125),
 				ClearTextOnFocus = false,
 				ClipsDescendants = true,
-				Size = UDim2.new(1, -78, 1, 0),
+				Size = UDim2.new(1, -140, 1, 0),
 				BackgroundColor3 = C.panel,
 				Font = Enum.Font.Gotham,
 				TextSize = 13,
@@ -2313,8 +2341,8 @@ local function main()
 			new("UIPadding", { PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10), Parent = kickBox })
 			local kickBtn = new("TextButton", {
 				Text = "Kick",
-				Size = UDim2.new(0, 70, 1, 0),
-				Position = UDim2.new(1, -70, 0, 0),
+				Size = UDim2.new(0, 66, 1, 0),
+				Position = UDim2.new(1, -136, 0, 0),
 				BackgroundColor3 = Color3.fromRGB(120, 36, 36),
 				Font = Enum.Font.GothamBold,
 				TextSize = 14,
@@ -2322,6 +2350,17 @@ local function main()
 				Parent = kickRow,
 			})
 			round(kickBtn, 8)
+			local banBtn = new("TextButton", {
+				Text = "Ban",
+				Size = UDim2.new(0, 66, 1, 0),
+				Position = UDim2.new(1, -66, 0, 0),
+				BackgroundColor3 = Color3.fromRGB(150, 28, 28),
+				Font = Enum.Font.GothamBold,
+				TextSize = 14,
+				TextColor3 = C.text,
+				Parent = kickRow,
+			})
+			round(banBtn, 8)
 			-- dropdown of players to pick from without typing (click the box to open it)
 			local kickList = new("Frame", {
 				LayoutOrder = nextOrder(),
@@ -2373,9 +2412,10 @@ local function main()
 				return nil, "No player in this server matches \"" .. query .. "\"."
 			end
 
-			-- kicks the player named in the box (one specific player). No confirm step: the Kick
-			-- button, or pressing Enter in the box, sends the game's /kick for that one name.
-			local function kickTyped()
+			-- Sends the game's /kick or /ban for the player named in the box (one specific player).
+			-- No confirm step: the button, or pressing Enter, sends the command for that one name,
+			-- and logs it to the shared ACTIONS feed. The server only acts on it if you're an admin.
+			local function moderate(action) -- action is "kick" or "ban"
 				local player, problem = matchPlayer(kickBox.Text)
 				if not player then
 					kickStatus.TextColor3 = C.bad
@@ -2387,17 +2427,21 @@ local function main()
 					kickStatus.Text = "That's you."
 					return
 				end
-				local sent = sendChat("/kick " .. player.Name)
+				local sent = sendChat("/" .. action .. " " .. player.Name)
 				if sent then
 					kickBox.Text = ""
 					kickStatus.TextColor3 = C.on
-					kickStatus.Text = "Sent /kick for " .. player.Name .. ". The server kicks them only if you're an admin."
+					kickStatus.Text = "Sent /" .. action .. " for " .. player.Name
+						.. ". The server acts on it only if you're an admin."
+					recordAction(action, player.Name)
 				else
 					kickStatus.TextColor3 = C.bad
 					kickStatus.Text = "Couldn't send the command through chat in this game."
 				end
 			end
+			local function kickTyped() moderate("kick") end
 			kickBtn.MouseButton1Click:Connect(kickTyped)
+			banBtn.MouseButton1Click:Connect(function() moderate("ban") end)
 
 			-- one row in the picker: avatar, display name and @username; click to put it in the box
 			local function kickRowFor(player, order)
@@ -2504,6 +2548,158 @@ local function main()
 				task.delay(0.25, function()
 					if not kickBox:IsFocused() then kickList.Visible = false end
 				end)
+			end)
+		end
+
+		---------------- actions feed: kicks, bans and announcements from everyone running the
+		-- logger in this game, pulled from the server's shared feed and refreshed every few seconds.
+		do
+			heading("ACTIONS (everyone)")
+			new("TextLabel", {
+				Text = "Kicks, bans and announcements from everyone running the logger in this game.",
+				LayoutOrder = nextOrder(),
+				Size = UDim2.new(1, 0, 0, 28),
+				BackgroundTransparency = 1,
+				Font = Enum.Font.Gotham,
+				TextSize = 12,
+				TextWrapped = true,
+				TextColor3 = C.subtext,
+				TextXAlignment = Enum.TextXAlignment.Left,
+				Parent = body,
+			})
+			local actionsList = new("ScrollingFrame", {
+				LayoutOrder = nextOrder(),
+				Size = UDim2.new(1, 0, 0, 190),
+				BackgroundColor3 = C.panel,
+				BorderSizePixel = 0,
+				ScrollBarThickness = 4,
+				ScrollBarImageColor3 = C.stroke,
+				CanvasSize = UDim2.new(),
+				AutomaticCanvasSize = Enum.AutomaticSize.Y,
+				Parent = body,
+			})
+			round(actionsList, 9)
+			new("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 5), Parent = actionsList })
+			new("UIPadding", {
+				PaddingLeft = UDim.new(0, 6),
+				PaddingRight = UDim.new(0, 6),
+				PaddingTop = UDim.new(0, 6),
+				PaddingBottom = UDim.new(0, 6),
+				Parent = actionsList,
+			})
+			local actionsEmpty = new("TextLabel", {
+				Text = "Loading actions...",
+				LayoutOrder = 1,
+				Size = UDim2.new(1, 0, 0, 30),
+				BackgroundTransparency = 1,
+				Font = Enum.Font.Gotham,
+				TextSize = 12,
+				TextColor3 = C.subtext,
+				Parent = actionsList,
+			})
+
+			local ACTION_META = {
+				kick = { icon = "🦶", verb = "kicked", color = C.accent },
+				ban = { icon = "🔨", verb = "banned", color = C.bad },
+				announcement = { icon = "📢", color = Color3.fromRGB(241, 196, 15) },
+			}
+
+			-- short "2m" / "3h" style age from the action's unix timestamp
+			local function timeAgo(t)
+				local secs = os.time() - (tonumber(t) or os.time())
+				if secs < 5 then return "now" end
+				if secs < 60 then return secs .. "s" end
+				if secs < 3600 then return math.floor(secs / 60) .. "m" end
+				if secs < 86400 then return math.floor(secs / 3600) .. "h" end
+				return math.floor(secs / 86400) .. "d"
+			end
+
+			-- "🦶 Mod kicked Target" / "🔨 Mod banned Target" / "📢 Sender: message"
+			local function actionText(a)
+				local meta = ACTION_META[a.kind]
+				if a.kind == "announcement" then
+					local sender = (type(a.target) == "string" and a.target ~= "") and a.target or "Someone"
+					local msg = (type(a.text) == "string" and a.text ~= "") and a.text or "(no message)"
+					return meta.icon .. " " .. sender .. ": " .. msg
+				end
+				local who = (type(a.moderatorDisplay) == "string" and a.moderatorDisplay ~= "")
+					and a.moderatorDisplay or (a.moderator or "Someone")
+				local target = (type(a.target) == "string" and a.target ~= "") and a.target or "someone"
+				return meta.icon .. " " .. who .. " " .. meta.verb .. " " .. target
+			end
+
+			local function renderActions(actions)
+				for _, child in ipairs(actionsList:GetChildren()) do
+					if child:IsA("Frame") then child:Destroy() end
+				end
+				if #actions == 0 then
+					actionsEmpty.Text = "No actions yet."
+					actionsEmpty.Visible = true
+					return
+				end
+				actionsEmpty.Visible = false
+				for i, a in ipairs(actions) do
+					if type(a) == "table" and ACTION_META[a.kind] then
+						local meta = ACTION_META[a.kind]
+						local row = new("Frame", {
+							LayoutOrder = i,
+							Size = UDim2.new(1, 0, 0, 34),
+							BackgroundColor3 = C.row,
+							Parent = actionsList,
+						})
+						round(row, 7)
+						new("Frame", { -- colored stripe showing the action type
+							Size = UDim2.fromOffset(4, 22),
+							Position = UDim2.fromOffset(6, 6),
+							BackgroundColor3 = meta.color,
+							BorderSizePixel = 0,
+							Parent = row,
+						})
+						new("TextLabel", {
+							Text = actionText(a),
+							Size = UDim2.new(1, -62, 1, 0),
+							Position = UDim2.fromOffset(16, 0),
+							BackgroundTransparency = 1,
+							Font = Enum.Font.GothamMedium,
+							TextSize = 12,
+							TextColor3 = C.text,
+							TextXAlignment = Enum.TextXAlignment.Left,
+							TextTruncate = Enum.TextTruncate.AtEnd,
+							Parent = row,
+						})
+						new("TextLabel", {
+							Text = timeAgo(a.t),
+							Size = UDim2.new(0, 42, 1, 0),
+							Position = UDim2.new(1, -46, 0, 0),
+							BackgroundTransparency = 1,
+							Font = Enum.Font.Gotham,
+							TextSize = 11,
+							TextColor3 = C.subtext,
+							TextXAlignment = Enum.TextXAlignment.Right,
+							Parent = row,
+						})
+					end
+				end
+			end
+
+			-- poll the shared feed while the script is alive (every 6s)
+			task.spawn(function()
+				while alive do
+					local status, resp = callServer("/actions", {
+						key = KEY,
+						userId = Players.LocalPlayer.UserId,
+						session = SESSION,
+						placeId = game.PlaceId,
+					})
+					if not alive then break end
+					if status == 200 and type(resp) == "table" and type(resp.actions) == "table" then
+						renderActions(resp.actions)
+					elseif status == 403 then
+						lostAccess(resp.error)
+						break
+					end
+					task.wait(6)
+				end
 			end)
 		end
 
