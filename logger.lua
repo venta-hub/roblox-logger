@@ -1,4 +1,4 @@
--- Join/Leave/Chat/Announcement Logger + Credits Viewer + Free Camera (v17, server version)
+-- Join/Leave/Chat/Announcement Logger + Credits Viewer + Free Camera (v18, server version)
 -- After the key is accepted, the Logger Panel opens (Right Ctrl hides/shows it unless you change
 -- the key): put your own Discord webhooks in it (one box per log type), switch each channel on/off,
 -- control the free camera, change keybinds, or terminate the whole script. Logs go through the Cloudflare Worker, which checks the key on every log and only
@@ -96,12 +96,19 @@ local function main()
 		return res.StatusCode, okBody and body or {}
 	end
 
-	-- returns (true) if the key is valid, or (false, reason)
+	-- For one-time keys the server hands out a session ID when the script starts; every later
+	-- request has to carry it. (Normal keys don't use one.)
+	local SESSION
+
+	-- starts a run with this key: returns (true) if it's valid, or (false, reason)
 	local function checkKey(key)
 		key = trim(key or "")
 		if key == "" then return false, "Enter a key." end
-		local status, body = callServer("/check", { key = key, userId = Players.LocalPlayer.UserId })
-		if status == 200 then return true end
+		local status, body = callServer("/check", { key = key, userId = Players.LocalPlayer.UserId, start = true })
+		if status == 200 then
+			SESSION = body.session
+			return true
+		end
 		if status == nil then return false, "Couldn't reach the key server. Try again." end
 		return false, body.error or "Invalid key."
 	end
@@ -391,7 +398,7 @@ local function main()
 		while alive do
 			task.wait(60)
 			if not alive then break end
-			local status, body = callServer("/check", { key = KEY, userId = Players.LocalPlayer.UserId })
+			local status, body = callServer("/check", { key = KEY, userId = Players.LocalPlayer.UserId, session = SESSION })
 			if status == 403 then lostAccess(body.error) end
 		end
 	end)
@@ -407,6 +414,7 @@ local function main()
 			kind = kind,
 			webhook = webhook,
 			payload = payload,
+			session = SESSION,
 		})
 		if status == nil then
 			warn("[Logger] Couldn't reach the server.")
@@ -1947,7 +1955,7 @@ local function main()
 		print("[Logger] Logger Panel open. " .. settings.panelKey .. " hides/shows it.")
 	end
 
-	print("[Logger] v17 running (logs + credits viewer + free camera + Logger Panel).")
+	print("[Logger] v18 running (logs + credits viewer + free camera + Logger Panel).")
 end
 
 local ok, err = xpcall(main, debug.traceback)
