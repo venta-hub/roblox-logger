@@ -1,4 +1,4 @@
--- Join/Leave/Chat/Announcement Logger + Credits Viewer + Free Camera (v23, server version)
+-- Join/Leave/Chat/Announcement Logger + Credits Viewer + Free Camera (v24, server version)
 -- After the key is accepted, the Logger Panel opens (Right Ctrl hides/shows it unless you change
 -- the key): put your own Discord webhooks in it (one box per log type), switch each channel on/off,
 -- control the free camera, change keybinds, or terminate the whole script. Logs go through the Cloudflare Worker, which checks the key on every log and only
@@ -935,7 +935,7 @@ local function main()
 
 		local title = make("TextLabel", {
 			Text = "Player Credits",
-			Size = UDim2.new(1, -140, 0, 20),
+			Size = UDim2.new(1, HAS_LOGGER and -140 or -176, 0, 20),
 			Position = UDim2.fromOffset(54, 9),
 			BackgroundTransparency = 1,
 			Font = Enum.Font.GothamBold,
@@ -946,7 +946,7 @@ local function main()
 		})
 		local subtitle = make("TextLabel", {
 			Text = "Loading...",
-			Size = UDim2.new(1, -140, 0, 16),
+			Size = UDim2.new(1, HAS_LOGGER and -140 or -176, 0, 16),
 			Position = UDim2.fromOffset(54, 28),
 			BackgroundTransparency = 1,
 			Font = Enum.Font.Gotham,
@@ -975,6 +975,30 @@ local function main()
 		end
 		local minimizeBtn = barButton("–", -76, THEME.rowHover)
 		local closeBtn = barButton("×", -40, THEME.down)
+
+		-- Credits-only keys don't get the Logger Panel, so this window has its own Terminate
+		-- button (⏻). It needs two clicks so it isn't hit by accident.
+		if not HAS_LOGGER then
+			local terminateBtn = barButton("⏻", -112, THEME.down)
+			local armed = false
+			terminateBtn.MouseButton1Click:Connect(function()
+				if not armed then
+					armed = true
+					terminateBtn.Text = "?"
+					subtitle.Text = "Click ⏻ again to terminate the script"
+					task.delay(3, function()
+						if armed and terminateBtn.Parent then
+							armed = false
+							terminateBtn.Text = "⏻"
+						end
+					end)
+					return
+				end
+				print("[Logger] Terminated. Run the loadstring to relaunch.")
+				genv.LoggerStop()
+				genv.LoggerStop = nil
+			end)
+		end
 
 		-- body
 		local body = make("Frame", {
@@ -1590,7 +1614,8 @@ local function main()
 	-- the free camera's toggle and key. Drag the title bar to move it, drag the bottom-right corner
 	-- to make it bigger or smaller, the panel key (Right Ctrl unless changed) hides it and brings it
 	-- back (× hides it too). Keybinds can be changed here, and Terminate stops the whole script.
-	do
+	-- Only keys that include the logger get this panel (credits-only keys just get Player Credits).
+	if HAS_LOGGER then
 		local UserInputService = game:GetService("UserInputService")
 		local MIN_W, MIN_H, MAX_W, MAX_H = 300, 160, 900, 900
 		local W, H, BAR = 420, 480, 44
@@ -1629,7 +1654,7 @@ local function main()
 			Parent = bar,
 		})
 		new("TextLabel", {
-			Text = "⚙  " .. PRODUCT_NAMES[PRODUCT] .. " Panel",
+			Text = "⚙  Logger Panel",
 			Size = UDim2.new(1, -60, 1, 0),
 			Position = UDim2.fromOffset(14, 0),
 			BackgroundTransparency = 1,
@@ -2272,7 +2297,7 @@ local function main()
 		print("[Logger] Logger Panel open. " .. settings.panelKey .. " hides/shows it.")
 	end
 
-	print("[Logger] v23 running (" .. PRODUCT_NAMES[PRODUCT] .. " key).")
+	print("[Logger] v24 running (" .. PRODUCT_NAMES[PRODUCT] .. " key).")
 end
 
 local ok, err = xpcall(main, debug.traceback)
