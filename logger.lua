@@ -2427,16 +2427,19 @@ local function main()
 					kickStatus.Text = "That's you."
 					return
 				end
+				kickBox.Text = ""
+				-- Always log the action to the shared ACTIONS feed the moment it's clicked, so it
+				-- shows in the panel even when this game's chat won't accept a /kick command.
+				recordAction(action, player.Name)
 				local sent = sendChat("/" .. action .. " " .. player.Name)
 				if sent then
-					kickBox.Text = ""
 					kickStatus.TextColor3 = C.on
 					kickStatus.Text = "Sent /" .. action .. " for " .. player.Name
 						.. ". The server acts on it only if you're an admin."
-					recordAction(action, player.Name)
 				else
-					kickStatus.TextColor3 = C.bad
-					kickStatus.Text = "Couldn't send the command through chat in this game."
+					kickStatus.TextColor3 = C.accent
+					kickStatus.Text = "Logged " .. action .. " for " .. player.Name
+						.. ", but this game's chat wouldn't take the /" .. action .. " command."
 				end
 			end
 			local function kickTyped() moderate("kick") end
