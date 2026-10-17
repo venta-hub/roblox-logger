@@ -1,4 +1,4 @@
--- Join/Leave/Chat/Announcement Logger + Credits Viewer + Free Camera (v18, server version)
+-- Join/Leave/Chat/Announcement Logger + Credits Viewer + Free Camera (v19, server version)
 -- After the key is accepted, the Logger Panel opens (Right Ctrl hides/shows it unless you change
 -- the key): put your own Discord webhooks in it (one box per log type), switch each channel on/off,
 -- control the free camera, change keybinds, or terminate the whole script. Logs go through the Cloudflare Worker, which checks the key on every log and only
@@ -721,9 +721,8 @@ local function main()
 		local UserInputService = game:GetService("UserInputService")
 		local TweenService = game:GetService("TweenService")
 
-		local KEYWORD = "credit" -- matches "Credits", "credit", "TotalCredits", etc.
 		local REFRESH = 2 -- seconds between updates
-		local MIN_WIDTH, MIN_HEIGHT = 290, 220
+		local MIN_WIDTH, MIN_HEIGHT = 290, 260
 		local MAX_WIDTH, MAX_HEIGHT = 900, 900
 
 		local LocalPlayer = Players.LocalPlayer
@@ -749,32 +748,59 @@ local function main()
 			Color3.fromRGB(210, 140, 80), -- 3rd bronze
 		}
 
-		---------------------------------------------------------------- finding credits
+		---------------------------------------------------------------- finding stats
+
+		-- What the window can show; the tabs at the top switch between them. A stat is found by
+		-- looking for values whose name contains one of its keywords (case, spaces and _ ignored).
+		local MODES = {
+			{
+				key = "credits",
+				tab = "💰 Credits",
+				title = "Player Credits",
+				unit = "credits",
+				keywords = { "credit" }, -- "Credits", "TotalCredits", ...
+			},
+			{
+				key = "hours",
+				tab = "⏱ Hours played",
+				title = "Hours Played",
+				unit = "hours",
+				keywords = { "hour", "playtime", "timeplayed", "minutesplayed", "secondsplayed" },
+			},
+		}
+		local mode = MODES[1]
 
 		local function matches(name)
-			return name:lower():find(KEYWORD, 1, true) ~= nil
+			local simple = name:lower():gsub("[%s_]", "")
+			for _, keyword in ipairs(mode.keywords) do
+				if simple:find(keyword, 1, true) then return true end
+			end
+			return false
 		end
 
+		-- prints where each player's stat was found, once per player per tab
 		local reported = {}
 		local function report(player, where)
-			if reported[player] == where then return end
-			reported[player] = where
-			print("[Credits]", player.Name, "->", where)
+			reported[mode.key] = reported[mode.key] or {}
+			if reported[mode.key][player] == where then return end
+			reported[mode.key][player] = where
+			print("[Stats]", mode.title .. ":", player.Name, "->", where)
 		end
 
-		local function findCredits(player)
+		-- returns (value, name of the stat) for the current tab, or nil if the game doesn't send it
+		local function findStat(player)
 			-- 1. values inside the player (leaderstats, Data folders, etc.)
 			for _, d in ipairs(player:GetDescendants()) do
 				if d:IsA("ValueBase") and matches(d.Name) then
 					report(player, d:GetFullName())
-					return d.Value
+					return d.Value, d.Name
 				end
 			end
 			-- 2. attributes on the player
 			for name, value in pairs(player:GetAttributes()) do
 				if matches(name) then
 					report(player, player:GetFullName() .. " attribute " .. name)
-					return value
+					return value, name
 				end
 			end
 			-- 3. per-player folders elsewhere, named after the player or their user ID
@@ -785,7 +811,7 @@ local function main()
 					while parent and parent ~= ReplicatedStorage do
 						if parent.Name == player.Name or parent.Name == id then
 							report(player, d:GetFullName())
-							return d.Value
+							return d.Value, d.Name
 						end
 						parent = parent.Parent
 					end
@@ -794,11 +820,37 @@ local function main()
 			return nil
 		end
 
+		-- playtime stats come in seconds, minutes or hours; the stat's name says which
+		local function toHours(value, statName)
+			local n = tonumber(value)
+			if not n then return nil end
+			local lower = statName:lower()
+			if lower:find("hour") then return n end
+			if lower:find("min") then return n / 60 end
+			return n / 3600 -- "Playtime", "TimePlayed", "SecondsPlayed": games usually store seconds
+		end
+
+		-- the current tab's value for a player (hours are converted to hours), or nil
+		local function readStat(player)
+			local value, statName = findStat(player)
+			if value == nil then return nil end
+			if mode.key == "hours" then return toHours(value, statName) end
+			return value
+		end
+
 		local function format(n)
 			if type(n) ~= "number" then return tostring(n) end
 			local s = tostring(math.floor(math.abs(n)))
 			s = s:reverse():gsub("(%d%d%d)", "%1,"):reverse():gsub("^,", "")
 			return (n < 0 and "-" or "") .. s
+		end
+
+		-- how a value looks in the current tab: "12,345" for credits, "3.5 h" for hours
+		local function formatStat(n)
+			if mode.key == "hours" and type(n) == "number" then
+				return (n >= 100 and format(n) or string.format("%.1f", n)) .. " h"
+			end
+			return format(n)
 		end
 
 		---------------------------------------------------------------- ui helpers
@@ -882,7 +934,7 @@ local function main()
 			make("UIGradient", { Color = ColorSequence.new(THEME.accent, THEME.accent2) }),
 		})
 
-		make("TextLabel", {
+		local icon = make("TextLabel", {
 			Text = "💰",
 			Size = UDim2.fromOffset(36, 36),
 			Position = UDim2.fromOffset(10, 8),
@@ -892,7 +944,7 @@ local function main()
 			Parent = bar,
 		}, { corner(10), stroke(THEME.accent, 1, 0.5) })
 
-		make("TextLabel", {
+		local title = make("TextLabel", {
 			Text = "Player Credits",
 			Size = UDim2.new(1, -140, 0, 20),
 			Position = UDim2.fromOffset(54, 9),
@@ -943,10 +995,47 @@ local function main()
 			Parent = frame,
 		})
 
+		-- tabs: switch the numbers between credits and hours played
+		local TOP = 54 -- everything below the tabs starts here
+		local tabBar = make("Frame", {
+			Size = UDim2.new(1, -24, 0, 32),
+			Position = UDim2.fromOffset(12, 12),
+			BackgroundColor3 = THEME.panel,
+			Parent = body,
+		}, {
+			corner(9),
+			stroke(THEME.stroke, 1),
+			make("UIListLayout", {
+				FillDirection = Enum.FillDirection.Horizontal,
+				SortOrder = Enum.SortOrder.LayoutOrder,
+				Padding = UDim.new(0, 4),
+			}),
+			make("UIPadding", {
+				PaddingLeft = UDim.new(0, 3),
+				PaddingRight = UDim.new(0, 3),
+				PaddingTop = UDim.new(0, 3),
+				PaddingBottom = UDim.new(0, 3),
+			}),
+		})
+		local tabButtons = {}
+		for i, m in ipairs(MODES) do
+			tabButtons[m.key] = make("TextButton", {
+				Text = m.tab,
+				LayoutOrder = i,
+				Size = UDim2.new(1 / #MODES, -4 * (#MODES - 1) / #MODES, 1, 0),
+				BackgroundColor3 = THEME.panel,
+				AutoButtonColor = false,
+				Font = Enum.Font.GothamBold,
+				TextSize = 13,
+				TextColor3 = THEME.subtext,
+				Parent = tabBar,
+			}, { corner(7) })
+		end
+
 		-- search box + sort button
 		local searchHolder = make("Frame", {
 			Size = UDim2.new(1, -126, 0, 34),
-			Position = UDim2.fromOffset(12, 12),
+			Position = UDim2.fromOffset(12, TOP),
 			BackgroundColor3 = THEME.panel,
 			Parent = body,
 		}, { corner(9) })
@@ -998,7 +1087,7 @@ local function main()
 		local sortBtn = make("TextButton", {
 			Text = SORTS[1].label,
 			Size = UDim2.fromOffset(94, 34),
-			Position = UDim2.new(1, -106, 0, 12),
+			Position = UDim2.new(1, -106, 0, TOP),
 			BackgroundColor3 = THEME.panel,
 			AutoButtonColor = false,
 			Font = Enum.Font.GothamBold,
@@ -1011,8 +1100,8 @@ local function main()
 
 		-- player list
 		local list = make("ScrollingFrame", {
-			Size = UDim2.new(1, -16, 1, -92),
-			Position = UDim2.fromOffset(12, 56),
+			Size = UDim2.new(1, -16, 1, -(TOP + 80)),
+			Position = UDim2.fromOffset(12, TOP + 44),
 			BackgroundTransparency = 1,
 			BorderSizePixel = 0,
 			ScrollBarThickness = 4,
@@ -1180,7 +1269,7 @@ local function main()
 
 		local running = true
 
-		-- rescan = look the credits up again (every 2 seconds); typing/sorting just reuses the last values
+		-- rescan = look the stat up again (every 2 seconds); typing/sorting just reuses the last values
 		local function refresh(rescan)
 			local query = search.Text:lower():match("^%s*(.-)%s*$")
 			clearBtn.Visible = search.Text ~= ""
@@ -1188,24 +1277,24 @@ local function main()
 			local all, shown, unknown, total = {}, 0, 0, 0
 			for _, player in ipairs(Players:GetPlayers()) do
 				local row = rows[player] or makeRow(player)
-				local credits = row.value
-				if rescan or credits == nil then credits = findCredits(player) end
-				local number = tonumber(credits)
+				local value = row.value
+				if rescan or value == nil then value = readStat(player) end
+				local number = tonumber(value)
 
-				-- flash green/red when someone's credits change
+				-- flash green/red when someone's number changes
 				if row.value ~= nil and number and tonumber(row.value) and number ~= tonumber(row.value) then
 					local color = number > tonumber(row.value) and THEME.up or THEME.down
 					row.credits.TextColor3 = color
 					tween(row.credits, 1.2, { TextColor3 = THEME.accent })
 				end
-				row.value = credits
-				row.credits.Text = credits == nil and "?" or format(credits)
+				row.value = value
+				row.credits.Text = value == nil and "?" or formatStat(value)
 
-				if credits == nil then unknown += 1 else total += number or 0 end
+				if value == nil then unknown += 1 else total += number or 0 end
 				table.insert(all, { player = player, row = row, n = number })
 			end
 
-			-- ranks always go by most credits, whatever the sort order
+			-- ranks always go by the highest number, whatever the sort order
 			table.sort(all, function(a, b) return (a.n or -math.huge) > (b.n or -math.huge) end)
 			for i, entry in ipairs(all) do
 				local medal = entry.n and MEDALS[i]
@@ -1235,14 +1324,15 @@ local function main()
 			end
 
 			local count = #all
-			subtitle.Text = string.format("%d player%s  •  %s credits total", count, count == 1 and "" or "s", format(total))
+			subtitle.Text = string.format("%d player%s  •  %s total", count, count == 1 and "" or "s",
+				mode.key == "hours" and formatStat(total) or (format(total) .. " " .. mode.unit))
 
 			if shown == 0 and query ~= "" then
 				emptyLabel.Text = "No players match \"" .. search.Text .. "\""
 				emptyLabel.TextColor3 = THEME.subtext
 				emptyLabel.Visible = true
 			elseif count > 0 and unknown == count then
-				emptyLabel.Text = "Couldn't find credits for anyone.\nThe game may not send them to your client."
+				emptyLabel.Text = "Couldn't find " .. mode.unit .. " for anyone.\nThe game may not send them to your client."
 				emptyLabel.TextColor3 = THEME.warn
 				emptyLabel.Visible = true
 			else
@@ -1258,6 +1348,27 @@ local function main()
 			sortBtn.Text = SORTS[sortIndex].label
 			refresh()
 		end)
+
+		-- switching tabs: highlight the chosen one, forget the old numbers and look the new stat up
+		local function setMode(newMode)
+			mode = newMode
+			for key, button in pairs(tabButtons) do
+				local selected = key == mode.key
+				tween(button, 0.15, {
+					BackgroundColor3 = selected and THEME.accent or THEME.panel,
+					TextColor3 = selected and Color3.fromRGB(30, 24, 10) or THEME.subtext,
+				})
+			end
+			title.Text = mode.title
+			icon.Text = mode.key == "hours" and "⏱" or "💰"
+			for _, row in pairs(rows) do row.value = nil end -- no green/red flash when switching
+			refresh(true)
+		end
+		for _, m in ipairs(MODES) do
+			tabButtons[m.key].MouseButton1Click:Connect(function()
+				if m ~= mode then setMode(m) end
+			end)
+		end
 
 		---------------------------------------------------------------- window controls
 
@@ -1358,6 +1469,7 @@ local function main()
 
 		---------------------------------------------------------------- start
 
+		setMode(MODES[1]) -- start on the Credits tab
 		setShown(true)
 		while running and alive do
 			if shownWindow then refresh(true) end -- no need to scan while it's hidden
@@ -1955,7 +2067,7 @@ local function main()
 		print("[Logger] Logger Panel open. " .. settings.panelKey .. " hides/shows it.")
 	end
 
-	print("[Logger] v18 running (logs + credits viewer + free camera + Logger Panel).")
+	print("[Logger] v19 running (logs + credits viewer + free camera + Logger Panel).")
 end
 
 local ok, err = xpcall(main, debug.traceback)
