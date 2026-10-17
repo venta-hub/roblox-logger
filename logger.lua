@@ -2554,6 +2554,176 @@ local function main()
 			end)
 		end
 
+		---------------- banned members: the shared ban list; click a name then Unban to remove it
+		-- Banning adds to this list for everyone; Unban sends /unban, logs it, and removes the name.
+		do
+			heading("BANNED (click a name, then Unban)")
+			local banRow = new("Frame", {
+				LayoutOrder = nextOrder(),
+				Size = UDim2.new(1, 0, 0, 150),
+				BackgroundTransparency = 1,
+				Parent = body,
+			})
+			local banScroll = new("ScrollingFrame", {
+				Size = UDim2.new(1, -86, 1, 0),
+				BackgroundColor3 = C.panel,
+				BorderSizePixel = 0,
+				ScrollBarThickness = 4,
+				ScrollBarImageColor3 = C.stroke,
+				CanvasSize = UDim2.new(),
+				AutomaticCanvasSize = Enum.AutomaticSize.Y,
+				Parent = banRow,
+			})
+			round(banScroll, 9)
+			new("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 4), Parent = banScroll })
+			new("UIPadding", {
+				PaddingLeft = UDim.new(0, 6),
+				PaddingRight = UDim.new(0, 6),
+				PaddingTop = UDim.new(0, 6),
+				PaddingBottom = UDim.new(0, 6),
+				Parent = banScroll,
+			})
+			local banEmpty = new("TextLabel", {
+				Text = "No bans yet.",
+				Size = UDim2.new(1, 0, 0, 28),
+				BackgroundTransparency = 1,
+				Font = Enum.Font.Gotham,
+				TextSize = 12,
+				TextColor3 = C.subtext,
+				Parent = banScroll,
+			})
+			local unbanBtn = new("TextButton", {
+				Text = "Unban",
+				Size = UDim2.fromOffset(74, 34),
+				Position = UDim2.new(1, -74, 0, 0),
+				BackgroundColor3 = C.off,
+				Font = Enum.Font.GothamBold,
+				TextSize = 14,
+				TextColor3 = C.text,
+				Parent = banRow,
+			})
+			round(unbanBtn, 8)
+			local banStatus = new("TextLabel", {
+				Text = "",
+				LayoutOrder = nextOrder(),
+				Size = UDim2.new(1, 0, 0, 20),
+				BackgroundTransparency = 1,
+				Font = Enum.Font.Gotham,
+				TextSize = 12,
+				TextColor3 = C.subtext,
+				TextXAlignment = Enum.TextXAlignment.Left,
+				TextTruncate = Enum.TextTruncate.AtEnd,
+				Parent = body,
+			})
+
+			local selected, selectedName = nil, nil -- lowercased key + display name of the picked row
+			local rowByKey = {}
+
+			local function renderBans(bans)
+				for _, child in ipairs(banScroll:GetChildren()) do
+					if child:IsA("TextButton") then child:Destroy() end
+				end
+				rowByKey = {}
+				if #bans == 0 then
+					banEmpty.Visible = true
+					selected, selectedName = nil, nil
+					unbanBtn.BackgroundColor3 = C.off
+					return
+				end
+				banEmpty.Visible = false
+				local stillThere = false
+				for i, b in ipairs(bans) do
+					if type(b) == "table" and type(b.name) == "string" then
+						local key = b.name:lower()
+						if key == selected then stillThere = true end
+						local row = new("TextButton", {
+							Text = "",
+							AutoButtonColor = false,
+							LayoutOrder = i,
+							Size = UDim2.new(1, 0, 0, 32),
+							BackgroundColor3 = (key == selected) and C.stroke or C.row,
+							Parent = banScroll,
+						})
+						round(row, 7)
+						new("TextLabel", {
+							Text = b.name,
+							Size = UDim2.new(1, -14, 0, 16),
+							Position = UDim2.fromOffset(9, 3),
+							BackgroundTransparency = 1,
+							Font = Enum.Font.GothamMedium,
+							TextSize = 12,
+							TextColor3 = C.text,
+							TextXAlignment = Enum.TextXAlignment.Left,
+							TextTruncate = Enum.TextTruncate.AtEnd,
+							Parent = row,
+						})
+						new("TextLabel", {
+							Text = "banned by " .. ((type(b.by) == "string" and b.by ~= "") and b.by or "someone"),
+							Size = UDim2.new(1, -14, 0, 11),
+							Position = UDim2.fromOffset(9, 18),
+							BackgroundTransparency = 1,
+							Font = Enum.Font.Gotham,
+							TextSize = 10,
+							TextColor3 = C.subtext,
+							TextXAlignment = Enum.TextXAlignment.Left,
+							TextTruncate = Enum.TextTruncate.AtEnd,
+							Parent = row,
+						})
+						rowByKey[key] = row
+						row.MouseButton1Click:Connect(function()
+							selected, selectedName = key, b.name
+							for k, r in pairs(rowByKey) do
+								r.BackgroundColor3 = (k == key) and C.stroke or C.row
+							end
+							unbanBtn.BackgroundColor3 = Color3.fromRGB(60, 120, 70)
+							banStatus.TextColor3 = C.subtext
+							banStatus.Text = "Selected " .. b.name .. ". Click Unban to remove them."
+						end)
+					end
+				end
+				-- the picked player may have been unbanned by someone else since the last refresh
+				if selected and not stillThere then
+					selected, selectedName = nil, nil
+					unbanBtn.BackgroundColor3 = C.off
+				elseif selected then
+					unbanBtn.BackgroundColor3 = Color3.fromRGB(60, 120, 70)
+				end
+			end
+
+			unbanBtn.MouseButton1Click:Connect(function()
+				if not selected then
+					banStatus.TextColor3 = C.bad
+					banStatus.Text = "Pick a name from the list first."
+					return
+				end
+				local name = selectedName
+				sendChat("/unban " .. name)
+				recordAction("unban", name)
+				banStatus.TextColor3 = C.on
+				banStatus.Text = "Unbanned " .. name .. ". The server acts on it only if you're an admin."
+				selected, selectedName = nil, nil
+				unbanBtn.BackgroundColor3 = C.off
+				for _, r in pairs(rowByKey) do r.BackgroundColor3 = C.row end
+			end)
+
+			-- poll the shared ban list while the script is alive (every 6s)
+			task.spawn(function()
+				while alive do
+					local status, resp = callServer("/bans", {
+						key = KEY,
+						userId = Players.LocalPlayer.UserId,
+						session = SESSION,
+						placeId = game.PlaceId,
+					})
+					if not alive then break end
+					if status == 200 and type(resp) == "table" and type(resp.bans) == "table" then
+						renderBans(resp.bans)
+					end
+					task.wait(6)
+				end
+			end)
+		end
+
 		---------------- actions feed: kicks, bans and announcements from everyone running the
 		-- logger in this game, pulled from the server's shared feed and refreshed every few seconds.
 		do
@@ -2604,6 +2774,7 @@ local function main()
 			local ACTION_META = {
 				kick = { icon = "🦶", verb = "kicked", color = C.accent },
 				ban = { icon = "🔨", verb = "banned", color = C.bad },
+				unban = { icon = "🔓", verb = "unbanned", color = C.on },
 				announcement = { icon = "📢", color = Color3.fromRGB(241, 196, 15) },
 			}
 
