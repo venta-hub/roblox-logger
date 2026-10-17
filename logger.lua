@@ -1,4 +1,4 @@
--- Join/Leave/Chat/Announcement Logger + Credits Viewer + Free Camera (v27, server version)
+-- Join/Leave/Chat/Announcement Logger + Credits Viewer + Free Camera (v28, server version)
 -- After the key is accepted, the Logger Panel opens (Right Ctrl hides/shows it unless you change
 -- the key): put your own Discord webhooks in it (one box per log type), switch each channel on/off,
 -- control the free camera, change keybinds, or terminate the whole script. Logs go through the Cloudflare Worker, which checks the key on every log and only
@@ -2240,7 +2240,7 @@ local function main()
 			})
 
 			local kickStatus = new("TextLabel", {
-				Text = "Pick a player (or type a name), then click Kick twice to confirm.",
+				Text = "Click a name to fill the box, or type one, then press Enter or Kick.",
 				LayoutOrder = nextOrder(),
 				Size = UDim2.new(1, 0, 0, 30),
 				BackgroundTransparency = 1,
@@ -2270,12 +2270,11 @@ local function main()
 				return nil, "No player in this server matches \"" .. query .. "\"."
 			end
 
-			local armedFor = nil -- the player the next click will kick
-			kickBtn.MouseButton1Click:Connect(function()
+			-- kicks the player named in the box (one specific player). No confirm step: the Kick
+			-- button, or pressing Enter in the box, sends the game's /kick for that one name.
+			local function kickTyped()
 				local player, problem = matchPlayer(kickBox.Text)
 				if not player then
-					armedFor = nil
-					kickBtn.Text = "Kick"
 					kickStatus.TextColor3 = C.bad
 					kickStatus.Text = problem
 					return
@@ -2285,32 +2284,17 @@ local function main()
 					kickStatus.Text = "That's you."
 					return
 				end
-				if armedFor ~= player then
-					-- first click: arm, so a kick is always two deliberate clicks on the same player
-					armedFor = player
-					kickBtn.Text = "Confirm"
-					kickStatus.TextColor3 = C.subtext
-					kickStatus.Text = "Click Confirm to kick " .. player.DisplayName .. " (@" .. player.Name .. ")."
-					task.delay(4, function()
-						if armedFor == player and kickBtn.Parent then
-							armedFor = nil
-							kickBtn.Text = "Kick"
-						end
-					end)
-					return
-				end
-				-- second click on the same player: send the game's kick command
-				armedFor = nil
-				kickBtn.Text = "Kick"
 				local sent = sendChat("/kick " .. player.Name)
 				if sent then
+					kickBox.Text = ""
 					kickStatus.TextColor3 = C.on
 					kickStatus.Text = "Sent /kick for " .. player.Name .. ". The server kicks them only if you're an admin."
 				else
 					kickStatus.TextColor3 = C.bad
 					kickStatus.Text = "Couldn't send the command through chat in this game."
 				end
-			end)
+			end
+			kickBtn.MouseButton1Click:Connect(kickTyped)
 
 			-- one row in the picker: avatar, display name and @username; click to put it in the box
 			local function kickRowFor(player, order)
@@ -2406,7 +2390,13 @@ local function main()
 
 			kickBox:GetPropertyChangedSignal("Text"):Connect(updateKickList)
 			kickBox.Focused:Connect(updateKickList)
-			kickBox.FocusLost:Connect(function()
+			kickBox.FocusLost:Connect(function(enterPressed)
+				if enterPressed then
+					-- pressing Enter kicks the player whose name is in the box
+					kickList.Visible = false
+					kickTyped()
+					return
+				end
 				-- a click on a row takes focus away, so wait a moment before hiding the list
 				task.delay(0.25, function()
 					if not kickBox:IsFocused() then kickList.Visible = false end
@@ -2588,7 +2578,7 @@ local function main()
 		print("[Logger] Logger Panel open. " .. settings.panelKey .. " hides/shows it.")
 	end
 
-	print("[Logger] v27 running (" .. PRODUCT_NAMES[PRODUCT] .. " key).")
+	print("[Logger] v28 running (" .. PRODUCT_NAMES[PRODUCT] .. " key).")
 end
 
 local ok, err = xpcall(main, debug.traceback)
