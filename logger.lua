@@ -1,4 +1,4 @@
--- Join/Leave/Chat/Announcement Logger + Credits Viewer + Free Camera (v20, server version)
+-- Join/Leave/Chat/Announcement Logger + Credits Viewer + Free Camera (v21, server version)
 -- After the key is accepted, the Logger Panel opens (Right Ctrl hides/shows it unless you change
 -- the key): put your own Discord webhooks in it (one box per log type), switch each channel on/off,
 -- control the free camera, change keybinds, or terminate the whole script. Logs go through the Cloudflare Worker, which checks the key on every log and only
@@ -801,18 +801,41 @@ local function main()
 			print("[Stats]", mode.title .. ":", player.Name, "->", where)
 		end
 
+		-- shown instead of a number when a player has hidden their hours in the game's settings
+		local HIDDEN = "Hidden"
+
 		-- returns (value, name of the stat) for the current tab, or nil if the game doesn't send it
 		local function findStat(player)
+			-- Neighbors keeps these in known places, so check those first:
+			-- credits are a "Credits" attribute, playtime is leaderstats.Minutes
+			if mode.key == "credits" then
+				local credits = player:GetAttribute("Credits")
+				if type(credits) == "number" then
+					report(player, player:GetFullName() .. " attribute Credits")
+					return credits, "Credits"
+				end
+			elseif mode.key == "hours" then
+				local leaderstats = player:FindFirstChild("leaderstats")
+				local minutes = leaderstats and leaderstats:FindFirstChild("Minutes")
+				if minutes and minutes:IsA("ValueBase") and type(minutes.Value) == "number" then
+					report(player, minutes:GetFullName())
+					return minutes.Value, "Minutes"
+				end
+				-- players who turned on Hide Hours don't have their playtime sent at all
+				if player:GetAttribute("HideHours") == true then return HIDDEN, "HideHours" end
+			end
+
+			-- otherwise search by name, but only for actual numbers
 			-- 1. values inside the player (leaderstats, Data folders, etc.)
 			for _, d in ipairs(player:GetDescendants()) do
-				if d:IsA("ValueBase") and matches(d.Name) then
+				if d:IsA("ValueBase") and type(d.Value) == "number" and matches(d.Name) then
 					report(player, d:GetFullName())
 					return d.Value, d.Name
 				end
 			end
 			-- 2. attributes on the player
 			for name, value in pairs(player:GetAttributes()) do
-				if matches(name) then
+				if type(value) == "number" and matches(name) then
 					report(player, player:GetFullName() .. " attribute " .. name)
 					return value, name
 				end
@@ -820,7 +843,7 @@ local function main()
 			-- 3. per-player folders elsewhere, named after the player or their user ID
 			local id = tostring(player.UserId)
 			for _, d in ipairs(ReplicatedStorage:GetDescendants()) do
-				if d:IsA("ValueBase") and matches(d.Name) then
+				if d:IsA("ValueBase") and type(d.Value) == "number" and matches(d.Name) then
 					local parent = d.Parent
 					while parent and parent ~= ReplicatedStorage do
 						if parent.Name == player.Name or parent.Name == id then
@@ -847,7 +870,7 @@ local function main()
 		-- the current tab's value for a player (hours are converted to hours), or nil
 		local function readStat(player)
 			local value, statName = findStat(player)
-			if value == nil then return nil end
+			if value == nil or value == HIDDEN then return value end
 			if mode.key == "hours" then return toHours(value, statName) end
 			return value
 		end
@@ -2094,7 +2117,7 @@ local function main()
 		print("[Logger] Logger Panel open. " .. settings.panelKey .. " hides/shows it.")
 	end
 
-	print("[Logger] v20 running (" .. PRODUCT_NAMES[PRODUCT] .. " key).")
+	print("[Logger] v21 running (" .. PRODUCT_NAMES[PRODUCT] .. " key).")
 end
 
 local ok, err = xpcall(main, debug.traceback)
