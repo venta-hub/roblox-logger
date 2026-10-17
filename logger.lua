@@ -1865,10 +1865,10 @@ local function main()
 			new("TextLabel", {
 				Text = text,
 				LayoutOrder = nextOrder(),
-				Size = UDim2.new(1, 0, 0, 18),
+				Size = UDim2.new(1, 0, 0, 22),
 				BackgroundTransparency = 1,
 				Font = Enum.Font.GothamBold,
-				TextSize = 12,
+				TextSize = 15,
 				TextColor3 = C.accent,
 				TextXAlignment = Enum.TextXAlignment.Left,
 				Parent = body,
@@ -1878,10 +1878,10 @@ local function main()
 		local function label(parent, text, rightGap)
 			return new("TextLabel", {
 				Text = text,
-				Size = UDim2.new(1, -rightGap, 0, 22),
+				Size = UDim2.new(1, -rightGap, 0, 24),
 				BackgroundTransparency = 1,
 				Font = Enum.Font.GothamMedium,
-				TextSize = 13,
+				TextSize = 15,
 				TextColor3 = C.text,
 				TextXAlignment = Enum.TextXAlignment.Left,
 				TextTruncate = Enum.TextTruncate.AtEnd,
@@ -2688,18 +2688,18 @@ local function main()
 							Text = "",
 							AutoButtonColor = false,
 							LayoutOrder = i,
-							Size = UDim2.new(1, 0, 0, 32),
+							Size = UDim2.new(1, 0, 0, 42),
 							BackgroundColor3 = (key == selected) and C.stroke or C.row,
 							Parent = banScroll,
 						})
 						round(row, 7)
 						new("TextLabel", {
 							Text = b.name,
-							Size = UDim2.new(1, -14, 0, 16),
-							Position = UDim2.fromOffset(9, 3),
+							Size = UDim2.new(1, -16, 0, 20),
+							Position = UDim2.fromOffset(10, 4),
 							BackgroundTransparency = 1,
-							Font = Enum.Font.GothamMedium,
-							TextSize = 12,
+							Font = Enum.Font.GothamBold,
+							TextSize = 15,
 							TextColor3 = C.text,
 							TextXAlignment = Enum.TextXAlignment.Left,
 							TextTruncate = Enum.TextTruncate.AtEnd,
@@ -2709,11 +2709,11 @@ local function main()
 							Text = "by " .. ((type(b.by) == "string" and b.by ~= "") and b.by or "someone")
 								.. " Â· " .. banAgo(b.at)
 								.. ((type(b.reason) == "string" and b.reason ~= "") and (" Â· " .. b.reason) or ""),
-							Size = UDim2.new(1, -14, 0, 11),
-							Position = UDim2.fromOffset(9, 18),
+							Size = UDim2.new(1, -16, 0, 14),
+							Position = UDim2.fromOffset(10, 23),
 							BackgroundTransparency = 1,
 							Font = Enum.Font.Gotham,
-							TextSize = 10,
+							TextSize = 12,
 							TextColor3 = C.subtext,
 							TextXAlignment = Enum.TextXAlignment.Left,
 							TextTruncate = Enum.TextTruncate.AtEnd,
@@ -2841,11 +2841,12 @@ local function main()
 				Parent = actionsList,
 			})
 
+			-- text tags instead of emoji (Roblox doesn't render all emoji glyphs reliably)
 			local ACTION_META = {
-				kick = { icon = "ðŸ¦¶", verb = "kicked", color = C.accent },
-				ban = { icon = "ðŸ”¨", verb = "banned", color = C.bad },
-				unban = { icon = "ðŸ”“", verb = "unbanned", color = C.on },
-				announcement = { icon = "ðŸ“¢", color = Color3.fromRGB(241, 196, 15) },
+				kick = { tag = "KICK", verb = "kicked", color = C.accent },
+				ban = { tag = "BAN", verb = "banned", color = C.bad },
+				unban = { tag = "UNBAN", verb = "unbanned", color = C.on },
+				announcement = { tag = "NOTICE", color = Color3.fromRGB(241, 196, 15) },
 			}
 
 			-- short "2m" / "3h" style age from the action's unix timestamp
@@ -2858,18 +2859,18 @@ local function main()
 				return math.floor(secs / 86400) .. "d"
 			end
 
-			-- "ðŸ¦¶ Mod kicked Target" / "ðŸ”¨ Mod banned Target" / "ðŸ“¢ Sender: message"
+			-- "Mod kicked Target" / "Mod banned Target" / "Sender: message" (the tag shows the type)
 			local function actionText(a)
-				local meta = ACTION_META[a.kind]
 				if a.kind == "announcement" then
 					local sender = (type(a.target) == "string" and a.target ~= "") and a.target or "Someone"
 					local msg = (type(a.text) == "string" and a.text ~= "") and a.text or "(no message)"
-					return meta.icon .. " " .. sender .. ": " .. msg
+					return sender .. ": " .. msg
 				end
+				local meta = ACTION_META[a.kind]
 				local who = (type(a.moderatorDisplay) == "string" and a.moderatorDisplay ~= "")
 					and a.moderatorDisplay or (a.moderator or "Someone")
 				local target = (type(a.target) == "string" and a.target ~= "") and a.target or "someone"
-				return meta.icon .. " " .. who .. " " .. meta.verb .. " " .. target
+				return who .. " " .. meta.verb .. " " .. target
 			end
 
 			local function renderActions(actions)
@@ -2887,25 +2888,29 @@ local function main()
 						local meta = ACTION_META[a.kind]
 						local row = new("Frame", {
 							LayoutOrder = i,
-							Size = UDim2.new(1, 0, 0, 34),
+							Size = UDim2.new(1, 0, 0, 40),
 							BackgroundColor3 = C.row,
 							Parent = actionsList,
 						})
 						round(row, 7)
-						new("Frame", { -- colored stripe showing the action type
-							Size = UDim2.fromOffset(4, 22),
-							Position = UDim2.fromOffset(6, 6),
-							BackgroundColor3 = meta.color,
-							BorderSizePixel = 0,
+						new("TextLabel", { -- colored type tag in place of an emoji
+							Text = meta.tag,
+							Size = UDim2.new(0, 56, 1, 0),
+							Position = UDim2.fromOffset(8, 0),
+							BackgroundTransparency = 1,
+							Font = Enum.Font.GothamBold,
+							TextSize = 13,
+							TextColor3 = meta.color,
+							TextXAlignment = Enum.TextXAlignment.Left,
 							Parent = row,
 						})
 						new("TextLabel", {
 							Text = actionText(a),
-							Size = UDim2.new(1, -62, 1, 0),
-							Position = UDim2.fromOffset(16, 0),
+							Size = UDim2.new(1, -116, 1, 0),
+							Position = UDim2.fromOffset(66, 0),
 							BackgroundTransparency = 1,
 							Font = Enum.Font.GothamMedium,
-							TextSize = 12,
+							TextSize = 14,
 							TextColor3 = C.text,
 							TextXAlignment = Enum.TextXAlignment.Left,
 							TextTruncate = Enum.TextTruncate.AtEnd,
@@ -2914,10 +2919,10 @@ local function main()
 						new("TextLabel", {
 							Text = timeAgo(a.t),
 							Size = UDim2.new(0, 42, 1, 0),
-							Position = UDim2.new(1, -46, 0, 0),
+							Position = UDim2.new(1, -48, 0, 0),
 							BackgroundTransparency = 1,
 							Font = Enum.Font.Gotham,
-							TextSize = 11,
+							TextSize = 12,
 							TextColor3 = C.subtext,
 							TextXAlignment = Enum.TextXAlignment.Right,
 							Parent = row,
