@@ -191,7 +191,7 @@ local function main()
 		round(frame, 14)
 		new("UIStroke", { Color = Color3.fromRGB(60, 60, 78), Thickness = 1.5, Parent = frame })
 		new("TextLabel", {
-			Text = "🔑  Enter Key",
+			Text = "ðŸ”‘  Enter Key",
 			Size = UDim2.new(1, -60, 0, 40),
 			Position = UDim2.fromOffset(16, 8),
 			BackgroundTransparency = 1,
@@ -202,7 +202,7 @@ local function main()
 			Parent = frame,
 		})
 		local close = new("TextButton", {
-			Text = "×",
+			Text = "Ã—",
 			Size = UDim2.fromOffset(30, 30),
 			Position = UDim2.new(1, -40, 0, 13),
 			BackgroundColor3 = Color3.fromRGB(34, 34, 44),
@@ -536,12 +536,12 @@ local function main()
 	end
 
 	track(Players.PlayerAdded:Connect(function(player)
-		send("join", "✅ Player Joined", 0x2ECC71, player)
+		send("join", "âœ… Player Joined", 0x2ECC71, player)
 	end))
 
 	track(Players.PlayerRemoving:Connect(function(player)
 		-- player count still includes the leaver at this point, so it's 1 higher
-		send("leave", "❌ Player Left", 0xE74C3C, player)
+		send("leave", "âŒ Player Left", 0xE74C3C, player)
 	end))
 
 	-- Backslash Discord formatting characters so names like cool_guy_123 don't turn italic
@@ -618,7 +618,7 @@ local function main()
 						local embeds, total = {}, 0
 						while chatQueue[1] and #embeds < 10 do
 							local m = chatQueue[1]
-							local embed = playerCard("💬 Chat", 0x3498DB, m.userId, m.displayName, m.username)
+							local embed = playerCard("ðŸ’¬ Chat", 0x3498DB, m.userId, m.displayName, m.username)
 							embed.timestamp = m.timestamp
 							addMessageFields(embed, m.text)
 
@@ -662,7 +662,7 @@ local function main()
 			return (text:gsub("<[^>]->", ""):match("^%s*(.-)%s*$"))
 		end
 
-		-- "Message from Xylryx" / "📢 Message From @Xylryx:" / "Message from Xylryx (@xylryx)" -> "Xylryx"
+		-- "Message from Xylryx" / "ðŸ“¢ Message From @Xylryx:" / "Message from Xylryx (@xylryx)" -> "Xylryx"
 		local function getSender(text)
 			local name = clean(text):match("[Mm][Ee][Ss][Ss][Aa][Gg][Ee]%s+[Ff][Rr][Oo][Mm]%s+(.+)$")
 			if not name then return nil end
@@ -737,7 +737,7 @@ local function main()
 			if not activeWebhook("announcement") then return end
 			-- The card's title is the sender's name exactly as the popup shows it ("Message from Xylryx").
 			-- If that name belongs to someone in this server, their avatar, username and ID are added too.
-			local title = "📢 Message from " .. senderName
+			local title = "ðŸ“¢ Message from " .. senderName
 			local userId, displayName, username = findSender(senderName)
 			print("[Logger] Announcement |", title, "| matched user ID:", userId or "none", "|", body)
 			local embed
@@ -777,8 +777,8 @@ local function main()
 	---------------------------------------------------------------- credits viewer
 	-- A window listing every player in the server and how many credits they have (this was
 	-- credits.lua). Search to filter, click the sort button, click a player to copy their name,
-	-- the credits key (Left Ctrl unless changed in the Logger Panel) or "×" hides it, the key shows
-	-- it again, drag the corner to resize, "–" shrinks it to the title bar.
+	-- the credits key (Left Ctrl unless changed in the Logger Panel) or "Ã—" hides it, the key shows
+	-- it again, drag the corner to resize, "â€“" shrinks it to the title bar.
 	local function startCreditsViewer()
 		local Players = game:GetService("Players")
 		local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -820,14 +820,14 @@ local function main()
 		local MODES = {
 			{
 				key = "credits",
-				tab = "💰 Credits",
+				tab = "ðŸ’° Credits",
 				title = "Player Credits",
 				unit = "credits",
 				keywords = { "credit" }, -- "Credits", "TotalCredits", ...
 			},
 			{
 				key = "hours",
-				tab = "⏱ Hours played",
+				tab = "â± Hours played",
 				title = "Hours Played",
 				unit = "hours",
 				keywords = { "hour", "playtime", "timeplayed", "minutesplayed", "secondsplayed" },
@@ -1021,7 +1021,7 @@ local function main()
 		})
 
 		local icon = make("TextLabel", {
-			Text = "💰",
+			Text = "ðŸ’°",
 			Size = UDim2.fromOffset(36, 36),
 			Position = UDim2.fromOffset(10, 8),
 			BackgroundColor3 = Color3.fromRGB(60, 48, 20),
@@ -1070,23 +1070,23 @@ local function main()
 			b.MouseLeave:Connect(function() tween(b, 0.15, { BackgroundColor3 = THEME.row, TextColor3 = THEME.subtext }) end)
 			return b
 		end
-		local minimizeBtn = barButton("–", -76, THEME.rowHover)
-		local closeBtn = barButton("×", -40, THEME.down)
+		local minimizeBtn = barButton("â€“", -76, THEME.rowHover)
+		local closeBtn = barButton("Ã—", -40, THEME.down)
 
 		-- Credits-only keys don't get the Logger Panel, so this window has its own Terminate
-		-- button (⏻). It needs two clicks so it isn't hit by accident.
+		-- button (â»). It needs two clicks so it isn't hit by accident.
 		if not HAS_LOGGER then
-			local terminateBtn = barButton("⏻", -112, THEME.down)
+			local terminateBtn = barButton("â»", -112, THEME.down)
 			local armed = false
 			terminateBtn.MouseButton1Click:Connect(function()
 				if not armed then
 					armed = true
 					terminateBtn.Text = "?"
-					subtitle.Text = "Click ⏻ again to terminate the script"
+					subtitle.Text = "Click â» again to terminate the script"
 					task.delay(3, function()
 						if armed and terminateBtn.Parent then
 							armed = false
-							terminateBtn.Text = "⏻"
+							terminateBtn.Text = "â»"
 						end
 					end)
 					return
@@ -1152,7 +1152,7 @@ local function main()
 		local searchStroke = stroke(THEME.stroke, 1)
 		searchStroke.Parent = searchHolder
 		make("TextLabel", {
-			Text = "🔍",
+			Text = "ðŸ”",
 			Size = UDim2.fromOffset(30, 34),
 			BackgroundTransparency = 1,
 			TextSize = 14,
@@ -1174,7 +1174,7 @@ local function main()
 			Parent = searchHolder,
 		})
 		local clearBtn = make("TextButton", {
-			Text = "×",
+			Text = "Ã—",
 			Visible = false,
 			Size = UDim2.fromOffset(26, 34),
 			Position = UDim2.new(1, -26, 0, 0),
@@ -1189,9 +1189,9 @@ local function main()
 		clearBtn.MouseButton1Click:Connect(function() search.Text = "" end)
 
 		local SORTS = {
-			{ label = "⬇ Most", key = "most" },
-			{ label = "⬆ Least", key = "least" },
-			{ label = "A–Z", key = "name" },
+			{ label = "â¬‡ Most", key = "most" },
+			{ label = "â¬† Least", key = "least" },
+			{ label = "Aâ€“Z", key = "name" },
 		}
 		local sortIndex = 1
 		local sortBtn = make("TextButton", {
@@ -1336,7 +1336,7 @@ local function main()
 				Parent = card,
 			}, { corner(14), stroke(THEME.accent, 1, 0.6) })
 			local creditsLabel = make("TextLabel", {
-				Text = "…",
+				Text = "â€¦",
 				Size = UDim2.new(1, -12, 1, 0),
 				Position = UDim2.fromOffset(6, 0),
 				BackgroundTransparency = 1,
@@ -1408,7 +1408,7 @@ local function main()
 			table.sort(all, function(a, b) return (a.n or -math.huge) > (b.n or -math.huge) end)
 			for i, entry in ipairs(all) do
 				local medal = entry.n and MEDALS[i]
-				entry.row.rank.Text = entry.n and ("#" .. i) or "–"
+				entry.row.rank.Text = entry.n and ("#" .. i) or "â€“"
 				entry.row.rank.TextColor3 = medal or THEME.subtext
 				entry.row.ring.Color = medal or THEME.stroke
 			end
@@ -1434,7 +1434,7 @@ local function main()
 			end
 
 			local count = #all
-			subtitle.Text = string.format("%d player%s  •  %s total", count, count == 1 and "" or "s",
+			subtitle.Text = string.format("%d player%s  â€¢  %s total", count, count == 1 and "" or "s",
 				mode.key == "hours" and formatStat(total) or (format(total) .. " " .. mode.unit))
 
 			if shown == 0 and query ~= "" then
@@ -1470,7 +1470,7 @@ local function main()
 				})
 			end
 			title.Text = mode.title
-			icon.Text = mode.key == "hours" and "⏱" or "💰"
+			icon.Text = mode.key == "hours" and "â±" or "ðŸ’°"
 			for _, row in pairs(rows) do row.value = nil end -- no green/red flash when switching
 			refresh(true)
 		end
@@ -1504,7 +1504,7 @@ local function main()
 
 		-- resize by dragging the grip in the bottom-right corner
 		local grip = make("TextButton", {
-			Text = "◢",
+			Text = "â—¢",
 			Size = UDim2.fromOffset(22, 22),
 			Position = UDim2.new(1, -22, 1, -22),
 			BackgroundTransparency = 1,
@@ -1541,7 +1541,7 @@ local function main()
 		local minimized = false
 		minimizeBtn.MouseButton1Click:Connect(function()
 			minimized = not minimized
-			minimizeBtn.Text = minimized and "+" or "–"
+			minimizeBtn.Text = minimized and "+" or "â€“"
 			grip.Visible = not minimized
 			tween(frame, 0.3, { Size = UDim2.fromOffset(WIDTH, minimized and BAR or HEIGHT) })
 		end)
@@ -1566,7 +1566,7 @@ local function main()
 			if keyIs(input, "creditsKey") then setShown(not shownWindow) end
 		end))
 
-		-- × hides the window; the credits key brings it back
+		-- Ã— hides the window; the credits key brings it back
 		closeBtn.MouseButton1Click:Connect(function()
 			setShown(false)
 			print("[Logger] Credits window hidden. Press " .. settings.creditsKey .. " to bring it back.")
@@ -1771,7 +1771,7 @@ local function main()
 	-- One window for your settings: a webhook box and an on/off toggle for each log channel, plus
 	-- the free camera's toggle and key. Drag the title bar to move it, drag the bottom-right corner
 	-- to make it bigger or smaller, the panel key (Right Ctrl unless changed) hides it and brings it
-	-- back (× hides it too). Keybinds can be changed here, and Terminate stops the whole script.
+	-- back (Ã— hides it too). Keybinds can be changed here, and Terminate stops the whole script.
 	-- Only keys that include the logger get this panel (credits-only keys just get Player Credits).
 	if HAS_LOGGER then
 		local UserInputService = game:GetService("UserInputService")
@@ -1812,7 +1812,7 @@ local function main()
 			Parent = bar,
 		})
 		new("TextLabel", {
-			Text = "⚙  Logger Panel",
+			Text = "âš™  Logger Panel",
 			Size = UDim2.new(1, -60, 1, 0),
 			Position = UDim2.fromOffset(14, 0),
 			BackgroundTransparency = 1,
@@ -1823,7 +1823,7 @@ local function main()
 			Parent = bar,
 		})
 		local hideBtn = new("TextButton", {
-			Text = "×",
+			Text = "Ã—",
 			Size = UDim2.fromOffset(28, 28),
 			Position = UDim2.new(1, -36, 0, 8),
 			BackgroundColor3 = C.row,
@@ -2196,7 +2196,7 @@ local function main()
 				round(avatar, 15)
 				new("TextLabel", {
 					Text = player.DisplayName .. (player == Players.LocalPlayer and "  (you)" or "")
-						.. (friendCache[player.UserId] and "  ⭐ Friend" or ""),
+						.. (friendCache[player.UserId] and "  â­ Friend" or ""),
 					Size = UDim2.new(1, -50, 0, 18),
 					Position = UDim2.fromOffset(44, 4),
 					BackgroundTransparency = 1,
@@ -2232,7 +2232,7 @@ local function main()
 				end)
 			end
 
-			-- friends first, then A–Z by display name
+			-- friends first, then Aâ€“Z by display name
 			local function byFriendThenName(a, b)
 				local fa, fb = isFriend(a), isFriend(b)
 				if fa ~= fb then return fa end
@@ -2361,6 +2361,24 @@ local function main()
 				Parent = kickRow,
 			})
 			round(banBtn, 8)
+			-- optional reason, saved with a ban and shown next to the name in the banned list
+			local reasonBox = new("TextBox", {
+				LayoutOrder = nextOrder(),
+				Text = "",
+				PlaceholderText = "Ban reason (optional)...",
+				PlaceholderColor3 = Color3.fromRGB(110, 110, 125),
+				ClearTextOnFocus = false,
+				ClipsDescendants = true,
+				Size = UDim2.new(1, 0, 0, 30),
+				BackgroundColor3 = C.panel,
+				Font = Enum.Font.Gotham,
+				TextSize = 13,
+				TextColor3 = C.text,
+				TextXAlignment = Enum.TextXAlignment.Left,
+				Parent = body,
+			})
+			round(reasonBox, 8)
+			new("UIPadding", { PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10), Parent = reasonBox })
 			-- dropdown of players to pick from without typing (click the box to open it)
 			local kickList = new("Frame", {
 				LayoutOrder = nextOrder(),
@@ -2430,7 +2448,10 @@ local function main()
 				kickBox.Text = ""
 				-- Always log the action to the shared ACTIONS feed the moment it's clicked, so it
 				-- shows in the panel even when this game's chat won't accept a /kick command.
-				recordAction(action, player.Name)
+				-- A ban carries the optional reason; it's saved with the ban and shown in the list.
+				local reason = action == "ban" and trim(reasonBox.Text) or ""
+				reasonBox.Text = ""
+				recordAction(action, player.Name, reason)
 				local sent = sendChat("/" .. action .. " " .. player.Name)
 				if sent then
 					kickStatus.TextColor3 = C.on
@@ -2558,6 +2579,23 @@ local function main()
 		-- Banning adds to this list for everyone; Unban sends /unban, logs it, and removes the name.
 		do
 			heading("BANNED (click a name, then Unban)")
+			local banSearch = new("TextBox", {
+				LayoutOrder = nextOrder(),
+				Text = "",
+				PlaceholderText = "Search banned players...",
+				PlaceholderColor3 = Color3.fromRGB(110, 110, 125),
+				ClearTextOnFocus = false,
+				ClipsDescendants = true,
+				Size = UDim2.new(1, 0, 0, 30),
+				BackgroundColor3 = C.panel,
+				Font = Enum.Font.Gotham,
+				TextSize = 13,
+				TextColor3 = C.text,
+				TextXAlignment = Enum.TextXAlignment.Left,
+				Parent = body,
+			})
+			round(banSearch, 8)
+			new("UIPadding", { PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10), Parent = banSearch })
 			local banRow = new("Frame", {
 				LayoutOrder = nextOrder(),
 				Size = UDim2.new(1, 0, 0, 150),
@@ -2618,6 +2656,16 @@ local function main()
 
 			local selected, selectedName = nil, nil -- lowercased key + display name of the picked row
 			local rowByKey = {}
+			local allBans = {} -- the full list from the server; the search box filters it
+
+			-- "just now" / "5m ago" / "3h ago" from the ban's unix timestamp
+			local function banAgo(t)
+				local secs = os.time() - (tonumber(t) or os.time())
+				if secs < 60 then return "just now" end
+				if secs < 3600 then return math.floor(secs / 60) .. "m ago" end
+				if secs < 86400 then return math.floor(secs / 3600) .. "h ago" end
+				return math.floor(secs / 86400) .. "d ago"
+			end
 
 			local function renderBans(bans)
 				for _, child in ipairs(banScroll:GetChildren()) do
@@ -2658,7 +2706,9 @@ local function main()
 							Parent = row,
 						})
 						new("TextLabel", {
-							Text = "banned by " .. ((type(b.by) == "string" and b.by ~= "") and b.by or "someone"),
+							Text = "by " .. ((type(b.by) == "string" and b.by ~= "") and b.by or "someone")
+								.. " Â· " .. banAgo(b.at)
+								.. ((type(b.reason) == "string" and b.reason ~= "") and (" Â· " .. b.reason) or ""),
 							Size = UDim2.new(1, -14, 0, 11),
 							Position = UDim2.fromOffset(9, 18),
 							BackgroundTransparency = 1,
@@ -2690,6 +2740,25 @@ local function main()
 				end
 			end
 
+			-- draw the list through the search box: everything, or just the names that match
+			local function applyFilter()
+				local query = trim(banSearch.Text):lower()
+				if query == "" then
+					banEmpty.Text = "No bans yet."
+					renderBans(allBans)
+					return
+				end
+				local filtered = {}
+				for _, b in ipairs(allBans) do
+					if type(b) == "table" and type(b.name) == "string" and b.name:lower():find(query, 1, true) then
+						table.insert(filtered, b)
+					end
+				end
+				banEmpty.Text = (#filtered == 0) and "No banned players match your search." or "No bans yet."
+				renderBans(filtered)
+			end
+			banSearch:GetPropertyChangedSignal("Text"):Connect(applyFilter)
+
 			unbanBtn.MouseButton1Click:Connect(function()
 				if not selected then
 					banStatus.TextColor3 = C.bad
@@ -2717,7 +2786,8 @@ local function main()
 					})
 					if not alive then break end
 					if status == 200 and type(resp) == "table" and type(resp.bans) == "table" then
-						renderBans(resp.bans)
+						allBans = resp.bans
+						applyFilter()
 					end
 					task.wait(6)
 				end
@@ -2772,10 +2842,10 @@ local function main()
 			})
 
 			local ACTION_META = {
-				kick = { icon = "🦶", verb = "kicked", color = C.accent },
-				ban = { icon = "🔨", verb = "banned", color = C.bad },
-				unban = { icon = "🔓", verb = "unbanned", color = C.on },
-				announcement = { icon = "📢", color = Color3.fromRGB(241, 196, 15) },
+				kick = { icon = "ðŸ¦¶", verb = "kicked", color = C.accent },
+				ban = { icon = "ðŸ”¨", verb = "banned", color = C.bad },
+				unban = { icon = "ðŸ”“", verb = "unbanned", color = C.on },
+				announcement = { icon = "ðŸ“¢", color = Color3.fromRGB(241, 196, 15) },
 			}
 
 			-- short "2m" / "3h" style age from the action's unix timestamp
@@ -2788,7 +2858,7 @@ local function main()
 				return math.floor(secs / 86400) .. "d"
 			end
 
-			-- "🦶 Mod kicked Target" / "🔨 Mod banned Target" / "📢 Sender: message"
+			-- "ðŸ¦¶ Mod kicked Target" / "ðŸ”¨ Mod banned Target" / "ðŸ“¢ Sender: message"
 			local function actionText(a)
 				local meta = ACTION_META[a.kind]
 				if a.kind == "announcement" then
@@ -2998,7 +3068,7 @@ local function main()
 
 		---------------- moving, resizing, hiding
 		local grip = new("TextButton", {
-			Text = "◢",
+			Text = "â—¢",
 			Size = UDim2.fromOffset(22, 22),
 			Position = UDim2.new(1, -22, 1, -22),
 			BackgroundTransparency = 1,
