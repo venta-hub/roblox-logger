@@ -2697,6 +2697,15 @@ local function main()
 					elseif status == 403 then
 						lostAccess(resp.error)
 						break
+					else
+						-- don't sit silently on "Loading..."; show what the server actually said
+						actionsEmpty.Visible = true
+						if status == nil then
+							actionsEmpty.Text = "Can't reach the server."
+						else
+							local why = (type(resp) == "table" and type(resp.error) == "string") and (": " .. resp.error) or ""
+							actionsEmpty.Text = "Server error " .. tostring(status) .. why
+						end
 					end
 					task.wait(6)
 				end
