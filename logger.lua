@@ -1,4 +1,4 @@
--- Join/Leave/Chat/Announcement Logger + Credits Viewer + Free Camera (v22, server version)
+-- Join/Leave/Chat/Announcement Logger + Credits Viewer + Free Camera (v23, server version)
 -- After the key is accepted, the Logger Panel opens (Right Ctrl hides/shows it unless you change
 -- the key): put your own Discord webhooks in it (one box per log type), switch each channel on/off,
 -- control the free camera, change keybinds, or terminate the whole script. Logs go through the Cloudflare Worker, which checks the key on every log and only
@@ -1929,10 +1929,30 @@ local function main()
 				Parent = body,
 			})
 
-			local function goToTyped()
-				local player, problem = freecam.findPlayer(nameBox.Text)
-				local ok = false
-				if player then ok, problem = freecam.goTo(player) end
+			-- dropdown of matching players that appears while you type (click one to go to them)
+			local MAX_SUGGESTIONS = 6
+			local suggestBox = new("Frame", {
+				LayoutOrder = goStatus.LayoutOrder, -- sits between the name box and the status line
+				Size = UDim2.new(1, 0, 0, 0),
+				AutomaticSize = Enum.AutomaticSize.Y,
+				BackgroundColor3 = C.panel,
+				Visible = false,
+				Parent = body,
+			})
+			goStatus.LayoutOrder = nextOrder()
+			round(suggestBox, 9)
+			new("UIStroke", { Color = C.stroke, Thickness = 1, ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Parent = suggestBox })
+			new("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 4), Parent = suggestBox })
+			new("UIPadding", {
+				PaddingLeft = UDim.new(0, 4),
+				PaddingRight = UDim.new(0, 4),
+				PaddingTop = UDim.new(0, 4),
+				PaddingBottom = UDim.new(0, 4),
+				Parent = suggestBox,
+			})
+
+			local function goToPlayer(player)
+				local ok, problem = freecam.goTo(player)
 				if ok then
 					goStatus.TextColor3 = C.on
 					goStatus.Text = "Camera moved to " .. player.DisplayName .. " (@" .. player.Name .. ")."
@@ -1941,9 +1961,140 @@ local function main()
 					goStatus.Text = problem
 				end
 			end
-			goBtn.MouseButton1Click:Connect(goToTyped)
+
+			local function goToTyped()
+				local player, problem = freecam.findPlayer(nameBox.Text)
+				if player then
+					goToPlayer(player)
+				else
+					goStatus.TextColor3 = C.bad
+					goStatus.Text = problem
+				end
+			end
+
+			-- one row per matching player: avatar, display name and @username
+			local function suggestionRow(player, order)
+				local row = new("TextButton", {
+					Text = "",
+					AutoButtonColor = false,
+					LayoutOrder = order,
+					Size = UDim2.new(1, 0, 0, 40),
+					BackgroundColor3 = C.row,
+					Parent = suggestBox,
+				})
+				round(row, 7)
+				local avatar = new("ImageLabel", {
+					Image = "rbxthumb://type=AvatarHeadShot&id=" .. player.UserId .. "&w=150&h=150",
+					Size = UDim2.fromOffset(30, 30),
+					Position = UDim2.fromOffset(6, 5),
+					BackgroundColor3 = C.bg,
+					Parent = row,
+				})
+				round(avatar, 15)
+				new("TextLabel", {
+					Text = player.DisplayName .. (player == Players.LocalPlayer and "  (you)" or ""),
+					Size = UDim2.new(1, -50, 0, 18),
+					Position = UDim2.fromOffset(44, 4),
+					BackgroundTransparency = 1,
+					Font = Enum.Font.GothamBold,
+					TextSize = 13,
+					TextColor3 = C.text,
+					TextXAlignment = Enum.TextXAlignment.Left,
+					TextTruncate = Enum.TextTruncate.AtEnd,
+					Parent = row,
+				})
+				new("TextLabel", {
+					Text = "@" .. player.Name,
+					Size = UDim2.new(1, -50, 0, 14),
+					Position = UDim2.fromOffset(44, 21),
+					BackgroundTransparency = 1,
+					Font = Enum.Font.Gotham,
+					TextSize = 11,
+					TextColor3 = C.subtext,
+					TextXAlignment = Enum.TextXAlignment.Left,
+					TextTruncate = Enum.TextTruncate.AtEnd,
+					Parent = row,
+				})
+				row.MouseEnter:Connect(function()
+					TweenService:Create(row, TweenInfo.new(0.12), { BackgroundColor3 = C.stroke }):Play()
+				end)
+				row.MouseLeave:Connect(function()
+					TweenService:Create(row, TweenInfo.new(0.12), { BackgroundColor3 = C.row }):Play()
+				end)
+				row.MouseButton1Click:Connect(function()
+					nameBox.Text = player.Name
+					suggestBox.Visible = false
+					goToPlayer(player)
+				end)
+			end
+
+			-- rebuilds the dropdown for what's typed: names that start with it first, then ones containing it
+			local function updateSuggestions()
+				for _, child in ipairs(suggestBox:GetChildren()) do
+					if child:IsA("TextButton") or child:IsA("TextLabel") then child:Destroy() end
+				end
+				local query = trim(nameBox.Text):lower():gsub("^@", "")
+				if query == "" or not nameBox:IsFocused() then
+					suggestBox.Visible = false
+					return
+				end
+				local starts, contains = {}, {}
+				for _, p in ipairs(Players:GetPlayers()) do
+					local name, display = p.Name:lower(), p.DisplayName:lower()
+					if name:sub(1, #query) == query or display:sub(1, #query) == query then
+						table.insert(starts, p)
+					elseif name:find(query, 1, true) or display:find(query, 1, true) then
+						table.insert(contains, p)
+					end
+				end
+				table.sort(starts, function(a, b) return a.DisplayName:lower() < b.DisplayName:lower() end)
+				table.sort(contains, function(a, b) return a.DisplayName:lower() < b.DisplayName:lower() end)
+				for _, p in ipairs(contains) do table.insert(starts, p) end
+
+				if #starts == 0 then
+					new("TextLabel", {
+						Text = "No one in this server matches \"" .. query .. "\"",
+						Size = UDim2.new(1, 0, 0, 26),
+						BackgroundTransparency = 1,
+						Font = Enum.Font.Gotham,
+						TextSize = 12,
+						TextColor3 = C.subtext,
+						Parent = suggestBox,
+					})
+				else
+					for i = 1, math.min(#starts, MAX_SUGGESTIONS) do suggestionRow(starts[i], i) end
+					if #starts > MAX_SUGGESTIONS then
+						new("TextLabel", {
+							Text = "+" .. (#starts - MAX_SUGGESTIONS) .. " more, keep typing",
+							LayoutOrder = MAX_SUGGESTIONS + 1,
+							Size = UDim2.new(1, 0, 0, 18),
+							BackgroundTransparency = 1,
+							Font = Enum.Font.Gotham,
+							TextSize = 11,
+							TextColor3 = C.subtext,
+							Parent = suggestBox,
+						})
+					end
+				end
+				suggestBox.Visible = true
+			end
+
+			nameBox:GetPropertyChangedSignal("Text"):Connect(updateSuggestions)
+			nameBox.Focused:Connect(updateSuggestions)
+			goBtn.MouseButton1Click:Connect(function()
+				suggestBox.Visible = false
+				goToTyped()
+			end)
 			nameBox.FocusLost:Connect(function(enterPressed)
-				if enterPressed then goToTyped() end
+				if enterPressed then
+					suggestBox.Visible = false
+					goToTyped()
+				else
+					-- clicking a suggestion also takes focus away, so give that click a moment first
+					task.delay(0.25, function()
+						if not nameBox:IsFocused() then suggestBox.Visible = false end
+					end)
+				end
 			end)
 		end
 
@@ -2121,7 +2272,7 @@ local function main()
 		print("[Logger] Logger Panel open. " .. settings.panelKey .. " hides/shows it.")
 	end
 
-	print("[Logger] v22 running (" .. PRODUCT_NAMES[PRODUCT] .. " key).")
+	print("[Logger] v23 running (" .. PRODUCT_NAMES[PRODUCT] .. " key).")
 end
 
 local ok, err = xpcall(main, debug.traceback)
