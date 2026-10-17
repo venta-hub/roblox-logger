@@ -1,4 +1,4 @@
--- Join/Leave/Chat/Announcement Logger + Credits Viewer + Free Camera (v21, server version)
+-- Join/Leave/Chat/Announcement Logger + Credits Viewer + Free Camera (v22, server version)
 -- After the key is accepted, the Logger Panel opens (Right Ctrl hides/shows it unless you change
 -- the key): put your own Discord webhooks in it (one box per log type), switch each channel on/off,
 -- control the free camera, change keybinds, or terminate the whole script. Logs go through the Cloudflare Worker, which checks the key on every log and only
@@ -281,9 +281,9 @@ local function main()
 	local HAS_LOGGER = PRODUCT == "bundle" or PRODUCT == "logger"
 	local HAS_CREDITS = PRODUCT == "bundle" or PRODUCT == "credits"
 	local HAS_FLY = PRODUCT == "bundle"
-	local PRODUCT_NAMES = { bundle = "Bundle", logger = "Logger", credits = "Credits & Hours" }
+	local PRODUCT_NAMES = { bundle = "Bundle", logger = "Logger", credits = "Credits" }
 	print("[Logger] " .. PRODUCT_NAMES[PRODUCT] .. " key: logger " .. (HAS_LOGGER and "on" or "off")
-		.. ", credits/hours " .. (HAS_CREDITS and "on" or "off") .. ", free camera " .. (HAS_FLY and "on" or "off") .. ".")
+		.. ", credits window " .. (HAS_CREDITS and "on" or "off") .. ", free camera " .. (HAS_FLY and "on" or "off") .. ".")
 
 	---------------------------------------------------------------- channels and settings
 	-- Your Discord webhooks (one per log type) and the on/off toggles are set in the Logger Panel
@@ -736,7 +736,7 @@ local function main()
 		local TweenService = game:GetService("TweenService")
 
 		local REFRESH = 2 -- seconds between updates
-		local MIN_WIDTH, MIN_HEIGHT = 290, 260
+		local MIN_WIDTH, MIN_HEIGHT = 290, 220
 		local MAX_WIDTH, MAX_HEIGHT = 900, 900
 
 		local LocalPlayer = Players.LocalPlayer
@@ -762,10 +762,10 @@ local function main()
 			Color3.fromRGB(210, 140, 80), -- 3rd bronze
 		}
 
-		---------------------------------------------------------------- finding stats
+		---------------------------------------------------------------- finding credits
 
-		-- What the window can show; the tabs at the top switch between them. A stat is found by
-		-- looking for values whose name contains one of its keywords (case, spaces and _ ignored).
+		-- What the window shows. Neighbors keeps each player's credits in a "Credits" attribute;
+		-- if that's missing, values whose name contains a keyword are used (case, spaces and _ ignored).
 		local MODES = {
 			{
 				key = "credits",
@@ -773,13 +773,6 @@ local function main()
 				title = "Player Credits",
 				unit = "credits",
 				keywords = { "credit" }, -- "Credits", "TotalCredits", ...
-			},
-			{
-				key = "hours",
-				tab = "⏱ Hours played",
-				title = "Hours Played",
-				unit = "hours",
-				keywords = { "hour", "playtime", "timeplayed", "minutesplayed", "secondsplayed" },
 			},
 		}
 		local mode = MODES[1]
@@ -792,37 +785,20 @@ local function main()
 			return false
 		end
 
-		-- prints where each player's stat was found, once per player per tab
+		-- prints where each player's credits were found, once per player
 		local reported = {}
 		local function report(player, where)
-			reported[mode.key] = reported[mode.key] or {}
-			if reported[mode.key][player] == where then return end
-			reported[mode.key][player] = where
-			print("[Stats]", mode.title .. ":", player.Name, "->", where)
+			if reported[player] == where then return end
+			reported[player] = where
+			print("[Credits]", player.Name, "->", where)
 		end
 
-		-- shown instead of a number when a player has hidden their hours in the game's settings
-		local HIDDEN = "Hidden"
-
-		-- returns (value, name of the stat) for the current tab, or nil if the game doesn't send it
+		-- returns a player's credits, or nil if the game doesn't send them
 		local function findStat(player)
-			-- Neighbors keeps these in known places, so check those first:
-			-- credits are a "Credits" attribute, playtime is leaderstats.Minutes
-			if mode.key == "credits" then
-				local credits = player:GetAttribute("Credits")
-				if type(credits) == "number" then
-					report(player, player:GetFullName() .. " attribute Credits")
-					return credits, "Credits"
-				end
-			elseif mode.key == "hours" then
-				local leaderstats = player:FindFirstChild("leaderstats")
-				local minutes = leaderstats and leaderstats:FindFirstChild("Minutes")
-				if minutes and minutes:IsA("ValueBase") and type(minutes.Value) == "number" then
-					report(player, minutes:GetFullName())
-					return minutes.Value, "Minutes"
-				end
-				-- players who turned on Hide Hours don't have their playtime sent at all
-				if player:GetAttribute("HideHours") == true then return HIDDEN, "HideHours" end
+			local credits = player:GetAttribute("Credits")
+			if type(credits) == "number" then
+				report(player, player:GetFullName() .. " attribute Credits")
+				return credits
 			end
 
 			-- otherwise search by name, but only for actual numbers
@@ -830,14 +806,14 @@ local function main()
 			for _, d in ipairs(player:GetDescendants()) do
 				if d:IsA("ValueBase") and type(d.Value) == "number" and matches(d.Name) then
 					report(player, d:GetFullName())
-					return d.Value, d.Name
+					return d.Value
 				end
 			end
 			-- 2. attributes on the player
 			for name, value in pairs(player:GetAttributes()) do
 				if type(value) == "number" and matches(name) then
 					report(player, player:GetFullName() .. " attribute " .. name)
-					return value, name
+					return value
 				end
 			end
 			-- 3. per-player folders elsewhere, named after the player or their user ID
@@ -848,7 +824,7 @@ local function main()
 					while parent and parent ~= ReplicatedStorage do
 						if parent.Name == player.Name or parent.Name == id then
 							report(player, d:GetFullName())
-							return d.Value, d.Name
+							return d.Value
 						end
 						parent = parent.Parent
 					end
@@ -856,24 +832,7 @@ local function main()
 			end
 			return nil
 		end
-
-		-- playtime stats come in seconds, minutes or hours; the stat's name says which
-		local function toHours(value, statName)
-			local n = tonumber(value)
-			if not n then return nil end
-			local lower = statName:lower()
-			if lower:find("hour") then return n end
-			if lower:find("min") then return n / 60 end
-			return n / 3600 -- "Playtime", "TimePlayed", "SecondsPlayed": games usually store seconds
-		end
-
-		-- the current tab's value for a player (hours are converted to hours), or nil
-		local function readStat(player)
-			local value, statName = findStat(player)
-			if value == nil or value == HIDDEN then return value end
-			if mode.key == "hours" then return toHours(value, statName) end
-			return value
-		end
+		local readStat = findStat
 
 		local function format(n)
 			if type(n) ~= "number" then return tostring(n) end
@@ -881,14 +840,7 @@ local function main()
 			s = s:reverse():gsub("(%d%d%d)", "%1,"):reverse():gsub("^,", "")
 			return (n < 0 and "-" or "") .. s
 		end
-
-		-- how a value looks in the current tab: "12,345" for credits, "3.5 h" for hours
-		local function formatStat(n)
-			if mode.key == "hours" and type(n) == "number" then
-				return (n >= 100 and format(n) or string.format("%.1f", n)) .. " h"
-			end
-			return format(n)
-		end
+		local formatStat = format
 
 		---------------------------------------------------------------- ui helpers
 
@@ -1032,42 +984,7 @@ local function main()
 			Parent = frame,
 		})
 
-		-- tabs: switch the numbers between credits and hours played
-		local TOP = 54 -- everything below the tabs starts here
-		local tabBar = make("Frame", {
-			Size = UDim2.new(1, -24, 0, 32),
-			Position = UDim2.fromOffset(12, 12),
-			BackgroundColor3 = THEME.panel,
-			Parent = body,
-		}, {
-			corner(9),
-			stroke(THEME.stroke, 1),
-			make("UIListLayout", {
-				FillDirection = Enum.FillDirection.Horizontal,
-				SortOrder = Enum.SortOrder.LayoutOrder,
-				Padding = UDim.new(0, 4),
-			}),
-			make("UIPadding", {
-				PaddingLeft = UDim.new(0, 3),
-				PaddingRight = UDim.new(0, 3),
-				PaddingTop = UDim.new(0, 3),
-				PaddingBottom = UDim.new(0, 3),
-			}),
-		})
-		local tabButtons = {}
-		for i, m in ipairs(MODES) do
-			tabButtons[m.key] = make("TextButton", {
-				Text = m.tab,
-				LayoutOrder = i,
-				Size = UDim2.new(1 / #MODES, -4 * (#MODES - 1) / #MODES, 1, 0),
-				BackgroundColor3 = THEME.panel,
-				AutoButtonColor = false,
-				Font = Enum.Font.GothamBold,
-				TextSize = 13,
-				TextColor3 = THEME.subtext,
-				Parent = tabBar,
-			}, { corner(7) })
-		end
+		local TOP = 12 -- the search box starts here
 
 		-- search box + sort button
 		local searchHolder = make("Frame", {
@@ -1361,8 +1278,7 @@ local function main()
 			end
 
 			local count = #all
-			subtitle.Text = string.format("%d player%s  •  %s total", count, count == 1 and "" or "s",
-				mode.key == "hours" and formatStat(total) or (format(total) .. " " .. mode.unit))
+			subtitle.Text = string.format("%d player%s  •  %s credits total", count, count == 1 and "" or "s", format(total))
 
 			if shown == 0 and query ~= "" then
 				emptyLabel.Text = "No players match \"" .. search.Text .. "\""
@@ -1386,26 +1302,6 @@ local function main()
 			refresh()
 		end)
 
-		-- switching tabs: highlight the chosen one, forget the old numbers and look the new stat up
-		local function setMode(newMode)
-			mode = newMode
-			for key, button in pairs(tabButtons) do
-				local selected = key == mode.key
-				tween(button, 0.15, {
-					BackgroundColor3 = selected and THEME.accent or THEME.panel,
-					TextColor3 = selected and Color3.fromRGB(30, 24, 10) or THEME.subtext,
-				})
-			end
-			title.Text = mode.title
-			icon.Text = mode.key == "hours" and "⏱" or "💰"
-			for _, row in pairs(rows) do row.value = nil end -- no green/red flash when switching
-			refresh(true)
-		end
-		for _, m in ipairs(MODES) do
-			tabButtons[m.key].MouseButton1Click:Connect(function()
-				if m ~= mode then setMode(m) end
-			end)
-		end
 
 		---------------------------------------------------------------- window controls
 
@@ -1506,7 +1402,7 @@ local function main()
 
 		---------------------------------------------------------------- start
 
-		setMode(MODES[1]) -- start on the Credits tab
+		refresh(true)
 		setShown(true)
 		while running and alive do
 			if shownWindow then refresh(true) end -- no need to scan while it's hidden
@@ -1627,6 +1523,44 @@ local function main()
 			if freecam.onChange then freecam.onChange(flying) end
 		end
 		function freecam.isOn() return flying end
+
+		-- Finds a player in this server by the start of their username or display name.
+		-- Returns the player, or nil and a reason.
+		function freecam.findPlayer(text)
+			local query = trim(text or ""):lower():gsub("^@", "")
+			if query == "" then return nil, "Type a player's name." end
+			local exact, partial = nil, {}
+			for _, p in ipairs(Players:GetPlayers()) do
+				local name, display = p.Name:lower(), p.DisplayName:lower()
+				if name == query or display == query then
+					exact = p
+					break
+				end
+				if name:sub(1, #query) == query or display:sub(1, #query) == query then
+					table.insert(partial, p)
+				end
+			end
+			if exact then return exact end
+			if #partial == 1 then return partial[1] end
+			if #partial > 1 then return nil, #partial .. " players match \"" .. query .. "\". Type more of the name." end
+			return nil, "No player in this server matches \"" .. query .. "\"."
+		end
+
+		-- Flies the camera to a player (starting free camera if it's off), just behind and above them,
+		-- looking at them. Returns true, or false and a reason.
+		function freecam.goTo(player)
+			if not HAS_FLY then return false, "Your key doesn't include the free camera." end
+			local character = player.Character
+			local root = character and (character:FindFirstChild("HumanoidRootPart") or character.PrimaryPart)
+			if not root then return false, player.DisplayName .. " hasn't loaded in yet." end
+			if not flying then freecam.set(true) end
+			if not flying then return false, "Couldn't start the free camera." end
+			local target = root.Position
+			local behind = root.CFrame.LookVector * -12 -- 12 studs behind them
+			position = target + Vector3.new(behind.X, 6, behind.Z)
+			pitch, yaw = CFrame.lookAt(position, target):ToOrientation()
+			return true
+		end
 		-- called when a fly key is changed in the panel, so it works straight away mid-flight
 		function freecam.keysChanged()
 			if flying then sinkKeys() end
@@ -1941,6 +1875,76 @@ local function main()
 				TextYAlignment = Enum.TextYAlignment.Top,
 				Parent = body,
 			})
+
+			-- go to a player: type their name (or the start of it) and the camera flies to them
+			label(new("Frame", {
+				LayoutOrder = nextOrder(),
+				Size = UDim2.new(1, 0, 0, 22),
+				BackgroundTransparency = 1,
+				Parent = body,
+			}), "Go to player", 0)
+			local goRow = new("Frame", {
+				LayoutOrder = nextOrder(),
+				Size = UDim2.new(1, 0, 0, 32),
+				BackgroundTransparency = 1,
+				Parent = body,
+			})
+			local nameBox = new("TextBox", {
+				Text = "",
+				PlaceholderText = "Username or display name...",
+				PlaceholderColor3 = Color3.fromRGB(110, 110, 125),
+				ClearTextOnFocus = false,
+				ClipsDescendants = true,
+				Size = UDim2.new(1, -74, 1, 0),
+				BackgroundColor3 = C.panel,
+				Font = Enum.Font.Gotham,
+				TextSize = 13,
+				TextColor3 = C.text,
+				TextXAlignment = Enum.TextXAlignment.Left,
+				Parent = goRow,
+			})
+			round(nameBox, 8)
+			new("UIPadding", { PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10), Parent = nameBox })
+			local goBtn = new("TextButton", {
+				Text = "Go",
+				Size = UDim2.new(0, 66, 1, 0),
+				Position = UDim2.new(1, -66, 0, 0),
+				BackgroundColor3 = C.accent,
+				Font = Enum.Font.GothamBold,
+				TextSize = 14,
+				TextColor3 = Color3.fromRGB(30, 24, 10),
+				Parent = goRow,
+			})
+			round(goBtn, 8)
+			local goStatus = new("TextLabel", {
+				Text = "",
+				LayoutOrder = nextOrder(),
+				Size = UDim2.new(1, 0, 0, 18),
+				BackgroundTransparency = 1,
+				Font = Enum.Font.Gotham,
+				TextSize = 12,
+				TextWrapped = true,
+				TextColor3 = C.subtext,
+				TextXAlignment = Enum.TextXAlignment.Left,
+				Parent = body,
+			})
+
+			local function goToTyped()
+				local player, problem = freecam.findPlayer(nameBox.Text)
+				local ok = false
+				if player then ok, problem = freecam.goTo(player) end
+				if ok then
+					goStatus.TextColor3 = C.on
+					goStatus.Text = "Camera moved to " .. player.DisplayName .. " (@" .. player.Name .. ")."
+				else
+					goStatus.TextColor3 = C.bad
+					goStatus.Text = problem
+				end
+			end
+			goBtn.MouseButton1Click:Connect(goToTyped)
+			nameBox.FocusLost:Connect(function(enterPressed)
+				if enterPressed then goToTyped() end
+			end)
 		end
 
 		---------------- keybinds: click a key button, then press the key you want (Esc cancels)
@@ -2117,7 +2121,7 @@ local function main()
 		print("[Logger] Logger Panel open. " .. settings.panelKey .. " hides/shows it.")
 	end
 
-	print("[Logger] v21 running (" .. PRODUCT_NAMES[PRODUCT] .. " key).")
+	print("[Logger] v22 running (" .. PRODUCT_NAMES[PRODUCT] .. " key).")
 end
 
 local ok, err = xpcall(main, debug.traceback)
