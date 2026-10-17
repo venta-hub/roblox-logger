@@ -1811,39 +1811,42 @@ local function main()
 				ClipsDescendants = true,
 				Parent = frame,
 			})
-			local WAVE = ColorSequence.new(Color3.fromRGB(30, 32, 40), Color3.fromRGB(7, 7, 11))
-			for i = 1, 6 do
-				local y = (i - 1) / 6
+			-- brighter so the waves actually read on the dark panel; still a cold obsidian tone
+			local SHEEN = ColorSequence.new(Color3.fromRGB(255, 255, 255), Color3.fromRGB(58, 64, 84))
+			for i = 1, 8 do
+				local y = (i - 1) / 8 - 0.05
 				local band = new("Frame", {
-					Size = UDim2.new(1.6, 0, 0, 130),
-					Position = UDim2.new(-0.3, 0, y, -8),
-					BackgroundColor3 = Color3.fromRGB(15, 16, 21),
-					BackgroundTransparency = 0.12,
+					Size = UDim2.new(1.7, 0, 0, 150),
+					Position = UDim2.new(-0.35, 0, y, 0),
+					BackgroundColor3 = Color3.fromRGB(66, 74, 98),
+					BackgroundTransparency = 0.22,
 					BorderSizePixel = 0,
-					Rotation = -6,
+					Rotation = -5,
 					ZIndex = 0,
 					Parent = backdrop,
 				})
-				-- the gradient's light/dark banding is the wave crests; scrolling it = moving water
+				-- the gradient carves the wave crests/troughs; scrolling it sideways = moving water
 				local grad = new("UIGradient", {
-					Color = WAVE,
-					Rotation = 80,
+					Color = SHEEN,
+					Rotation = 74,
 					Offset = Vector2.new(-1, 0),
 					Transparency = NumberSequence.new({
-						NumberSequenceKeypoint.new(0, 0.95),
-						NumberSequenceKeypoint.new(0.2, 0.35),
-						NumberSequenceKeypoint.new(0.45, 0.95),
-						NumberSequenceKeypoint.new(0.68, 0.4),
-						NumberSequenceKeypoint.new(1, 0.95),
+						NumberSequenceKeypoint.new(0, 0.92),
+						NumberSequenceKeypoint.new(0.16, 0.2),
+						NumberSequenceKeypoint.new(0.34, 0.92),
+						NumberSequenceKeypoint.new(0.52, 0.25),
+						NumberSequenceKeypoint.new(0.72, 0.92),
+						NumberSequenceKeypoint.new(0.88, 0.3),
+						NumberSequenceKeypoint.new(1, 0.92),
 					}),
 					Parent = band,
 				})
 				-- each layer drifts sideways at its own speed, and bobs up and down, forever
-				TweenService:Create(grad, TweenInfo.new(6 + i * 1.5, Enum.EasingStyle.Linear, Enum.EasingDirection.Out, -1), {
+				TweenService:Create(grad, TweenInfo.new(7 + i * 1.3, Enum.EasingStyle.Linear, Enum.EasingDirection.Out, -1), {
 					Offset = Vector2.new(1, 0),
 				}):Play()
-				TweenService:Create(band, TweenInfo.new(3 + i * 0.7, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {
-					Position = UDim2.new(-0.3, 0, y, 8),
+				TweenService:Create(band, TweenInfo.new(3 + i * 0.6, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {
+					Position = UDim2.new(-0.35, 0, y + 0.02, 0),
 				}):Play()
 			end
 		end
