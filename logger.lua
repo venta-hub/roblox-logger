@@ -1847,12 +1847,9 @@ local function main()
 		round(frame, 14)
 		new("UIStroke", { Color = C.stroke, Thickness = 1.5, Parent = frame })
 
-		-- real obsidian water texture that slowly drifts, a soft light that follows the cursor, and
-		-- a ripple that expands from wherever you click: the water reacts to the mouse.
+		-- simple animated obsidian-wave backdrop: two gradient layers drifting at different speeds,
+		-- nothing mouse-reactive
 		do
-			local UIS = game:GetService("UserInputService")
-			local RunService = game:GetService("RunService")
-			local guiInset = game:GetService("GuiService"):GetGuiInset()
 			local backdrop = new("Frame", {
 				Size = UDim2.fromScale(1, 1),
 				BackgroundColor3 = Color3.fromRGB(255, 255, 255),
@@ -1862,143 +1859,41 @@ local function main()
 				Parent = frame,
 			})
 			round(backdrop, 14)
-			-- animated dark water gradient: the base layer, and a graceful fallback if the photo
-			-- can't load (e.g. the number is a Decal id rather than the underlying Image id)
-			local baseGrad = new("UIGradient", {
-				Rotation = 100,
-				Color = ColorSequence.new({
+			local function waveColors(crest)
+				return ColorSequence.new({
 					ColorSequenceKeypoint.new(0.00, Color3.fromRGB(8, 9, 13)),
-					ColorSequenceKeypoint.new(0.22, Color3.fromRGB(30, 36, 50)),
-					ColorSequenceKeypoint.new(0.46, Color3.fromRGB(10, 12, 17)),
-					ColorSequenceKeypoint.new(0.68, Color3.fromRGB(26, 32, 45)),
-					ColorSequenceKeypoint.new(0.88, Color3.fromRGB(34, 40, 55)),
+					ColorSequenceKeypoint.new(0.25, crest),
+					ColorSequenceKeypoint.new(0.50, Color3.fromRGB(8, 9, 13)),
+					ColorSequenceKeypoint.new(0.75, crest),
 					ColorSequenceKeypoint.new(1.00, Color3.fromRGB(8, 9, 13)),
-				}),
+				})
+			end
+			local grad = new("UIGradient", {
+				Rotation = 100,
+				Color = waveColors(Color3.fromRGB(30, 36, 50)),
 				Parent = backdrop,
 			})
-			TweenService:Create(baseGrad, TweenInfo.new(14, Enum.EasingStyle.Linear, Enum.EasingDirection.Out, -1), {
+			TweenService:Create(grad, TweenInfo.new(12, Enum.EasingStyle.Linear, Enum.EasingDirection.Out, -1), {
 				Offset = Vector2.new(0, 1),
 			}):Play()
-			-- extra drifting gradient layers over the base; overlapping at different angles/speeds
-			-- they interfere into a shifting dark texture that reads as moving obsidian water
-			local function waterLayer(rotation, speed, dir, trans, crest)
-				local layer = new("Frame", {
-					Size = UDim2.fromScale(1, 1),
-					BackgroundColor3 = Color3.fromRGB(255, 255, 255),
-					BackgroundTransparency = trans,
-					BorderSizePixel = 0,
-					ZIndex = 0,
-					Parent = backdrop,
-				})
-				round(layer, 14)
-				local g = new("UIGradient", {
-					Rotation = rotation,
-					Color = ColorSequence.new({
-						ColorSequenceKeypoint.new(0.00, Color3.fromRGB(5, 6, 9)),
-						ColorSequenceKeypoint.new(0.25, crest),
-						ColorSequenceKeypoint.new(0.50, Color3.fromRGB(5, 6, 9)),
-						ColorSequenceKeypoint.new(0.75, crest),
-						ColorSequenceKeypoint.new(1.00, Color3.fromRGB(5, 6, 9)),
-					}),
-					Parent = layer,
-				})
-				TweenService:Create(g, TweenInfo.new(speed, Enum.EasingStyle.Linear, Enum.EasingDirection.Out, -1), {
-					Offset = Vector2.new(0, dir),
-				}):Play()
-			end
-			waterLayer(92, 13, 1, 0.35, Color3.fromRGB(32, 38, 52))
-			waterLayer(107, 19, -1, 0.5, Color3.fromRGB(24, 30, 44))
-			-- The REAL water photo, shown for everyone: downloaded from the repo into the executor's
-			-- folder once, then loaded locally (getcustomasset), which bypasses Roblox asset
-			-- permissions. If an executor can't do this, the procedural water above stays instead.
-			local water = new("ImageLabel", {
-				Size = UDim2.fromScale(1.18, 1.18),
-				Position = UDim2.fromScale(-0.09, -0.09),
-				BackgroundTransparency = 1,
-				ImageTransparency = 1,
-				-- Tile zooms the texture out (natural scale, not a blown-up crop) and fills the whole
-				-- panel with more water; keeps the image sharp since it isn't being upscaled.
-				ScaleType = Enum.ScaleType.Tile,
-				TileSize = UDim2.fromOffset(300, 200),
-				ZIndex = 0,
-				Parent = backdrop,
-			})
-			TweenService:Create(water, TweenInfo.new(20, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {
-				Position = UDim2.fromScale(-0.03, -0.02),
-			}):Play()
-			-- light veil so panel text stays legible over the photo
-			new("Frame", {
+			local layer2 = new("Frame", {
 				Size = UDim2.fromScale(1, 1),
-				BackgroundColor3 = Color3.fromRGB(0, 0, 0),
-				BackgroundTransparency = 0.35,
+				BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+				BackgroundTransparency = 0.5,
 				BorderSizePixel = 0,
 				ZIndex = 0,
 				Parent = backdrop,
 			})
-			task.spawn(function()
-				local ok, asset = pcall(function()
-					local loadAsset = getcustomasset or getsynasset or (syn and syn.getcustomasset)
-					if not (writefile and loadAsset) then return nil end
-					local file = "venta_obsidian_water.png"
-					if not (isfile and isfile(file)) then
-						writefile(file, game:HttpGet("https://raw.githubusercontent.com/venta-hub/roblox-logger/main/water.png"))
-					end
-					return loadAsset(file)
-				end)
-				if ok and asset and water and water.Parent then
-					water.Image = asset
-					water.ImageTransparency = 0
-				end
-			end)
-			local function within(v)
-				local p, s = backdrop.AbsolutePosition, backdrop.AbsoluteSize
-				return v.X >= p.X and v.X <= p.X + s.X and v.Y >= p.Y and v.Y <= p.Y + s.Y
-			end
-			-- one expanding, fading ring = a disturbance spreading across the water
-			local function spawnRipple(cx, cy, maxSize, life, thick, alpha)
-				local ring = new("Frame", {
-					Size = UDim2.fromOffset(10, 10),
-					Position = UDim2.fromOffset(cx, cy),
-					AnchorPoint = Vector2.new(0.5, 0.5),
-					BackgroundTransparency = 1,
-					BorderSizePixel = 0,
-					ZIndex = 0,
-					Parent = backdrop,
-				})
-				new("UICorner", { CornerRadius = UDim.new(1, 0), Parent = ring })
-				local rs = new("UIStroke", { Color = Color3.fromRGB(190, 210, 245), Thickness = thick, Transparency = alpha, Parent = ring })
-				TweenService:Create(ring, TweenInfo.new(life, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-					Size = UDim2.fromOffset(maxSize, maxSize),
-				}):Play()
-				local ft = TweenService:Create(rs, TweenInfo.new(life, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-					Transparency = 1, Thickness = 0,
-				})
-				ft:Play()
-				ft.Completed:Connect(function() ring:Destroy() end)
-			end
-			-- as the cursor moves it leaves a trail of ripples, like something gliding through water
-			local lastPos
-			track(RunService.RenderStepped:Connect(function()
-				if not alive then return end
-				local m = UIS:GetMouseLocation() - guiInset
-				if not within(m) then lastPos = nil return end
-				local lx, ly = m.X - backdrop.AbsolutePosition.X, m.Y - backdrop.AbsolutePosition.Y
-				local p = Vector2.new(lx, ly)
-				if not lastPos or (p - lastPos).Magnitude > 20 then
-					lastPos = p
-					spawnRipple(lx, ly, 80, 0.9, 1.5, 0.4)
-				end
-			end))
-			-- a bigger, layered splash where you click, like dropping a ball in
-			track(UIS.InputBegan:Connect(function(input)
-				if not alive or input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
-				local m = UIS:GetMouseLocation() - guiInset
-				if within(m) then
-					local lx, ly = m.X - backdrop.AbsolutePosition.X, m.Y - backdrop.AbsolutePosition.Y
-					spawnRipple(lx, ly, 250, 0.85, 3, 0.1)
-					spawnRipple(lx, ly, 150, 0.6, 2, 0.25)
-				end
-			end))
+			round(layer2, 14)
+			local grad2 = new("UIGradient", {
+				Rotation = 84,
+				Color = waveColors(Color3.fromRGB(24, 30, 44)),
+				Offset = Vector2.new(0.3, 0),
+				Parent = layer2,
+			})
+			TweenService:Create(grad2, TweenInfo.new(18, Enum.EasingStyle.Linear, Enum.EasingDirection.Out, -1), {
+				Offset = Vector2.new(0.3, -1),
+			}):Play()
 		end
 
 		-- title bar: drag it to move the window
@@ -2088,6 +1983,40 @@ local function main()
 				BorderSizePixel = 0,
 				Parent = holder,
 			})
+		end
+
+		-- a clickable "SHOW X" / "HIDE X" header. Register each of a section's elements with the
+		-- returned function and they show/hide together; the section starts collapsed.
+		local function collapsible(nameUpper)
+			local items, shown = {}, false
+			local btn = new("TextButton", {
+				LayoutOrder = nextOrder(),
+				Size = UDim2.new(1, 0, 0, 38),
+				BackgroundColor3 = C.panel,
+				AutoButtonColor = false,
+				Font = Enum.Font.GothamBold,
+				TextSize = 14,
+				TextColor3 = C.accent,
+				TextXAlignment = Enum.TextXAlignment.Left,
+				Text = "",
+				Parent = body,
+			})
+			round(btn, 9)
+			new("UIStroke", { Color = C.stroke, Thickness = 1, Transparency = 0.3, ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Parent = btn })
+			new("UIPadding", { PaddingLeft = UDim.new(0, 14), PaddingRight = UDim.new(0, 14), Parent = btn })
+			local function refresh()
+				btn.Text = (shown and "HIDE " or "SHOW ") .. nameUpper
+				for _, e in ipairs(items) do e.Visible = shown end
+			end
+			btn.MouseButton1Click:Connect(function()
+				shown = not shown
+				refresh()
+			end)
+			refresh()
+			return function(e)
+				table.insert(items, e)
+				e.Visible = shown
+			end
 		end
 
 		local function label(parent, text, rightGap)
@@ -2793,7 +2722,7 @@ local function main()
 		---------------- banned members: the shared ban list; click a name then Unban to remove it
 		-- Banning adds to this list for everyone; Unban sends /unban, logs it, and removes the name.
 		do
-			heading("BANNED (click a name, then Unban)")
+			local addBan = collapsible("BANS")
 			local banSearch = new("TextBox", {
 				LayoutOrder = nextOrder(),
 				Text = "",
@@ -2868,6 +2797,11 @@ local function main()
 				TextTruncate = Enum.TextTruncate.AtEnd,
 				Parent = body,
 			})
+
+			-- hide the ban UI behind the "SHOW BANS" header
+			addBan(banSearch)
+			addBan(banRow)
+			addBan(banStatus)
 
 			local selected, selectedName = nil, nil -- lowercased key + display name of the picked row
 			local rowByKey = {}
@@ -3012,8 +2946,8 @@ local function main()
 		---------------- actions feed: kicks, bans and announcements from everyone running the
 		-- logger in this game, pulled from the server's shared feed and refreshed every few seconds.
 		do
-			heading("ACTIONS (everyone)")
-			new("TextLabel", {
+			local addAct = collapsible("ACTIONS")
+			local actionsInfo = new("TextLabel", {
 				Text = "Kicks, bans and announcements from everyone running the logger in this game.",
 				LayoutOrder = nextOrder(),
 				Size = UDim2.new(1, 0, 0, 28),
@@ -3045,6 +2979,9 @@ local function main()
 				PaddingBottom = UDim.new(0, 6),
 				Parent = actionsList,
 			})
+			-- hide the actions feed behind the "SHOW ACTIONS" header
+			addAct(actionsInfo)
+			addAct(actionsList)
 			local actionsEmpty = new("TextLabel", {
 				Text = "Loading actions...",
 				LayoutOrder = 1,
