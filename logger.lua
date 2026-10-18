@@ -1884,8 +1884,8 @@ local function main()
 				Size = UDim2.fromScale(1.18, 1.18),
 				Position = UDim2.fromScale(-0.09, -0.1),
 				BackgroundTransparency = 1,
-				-- rbxthumb renders a decal's picture directly, so no Image-id hunting needed
-				Image = "rbxthumb://type=Asset&id=96596032989374&w=720&h=720",
+				-- rbxthumb renders a decal's picture directly; 420 is the size this asset has generated
+				Image = "rbxthumb://type=Asset&id=96596032989374&w=420&h=420",
 				ScaleType = Enum.ScaleType.Crop,
 				ZIndex = 0,
 				Parent = backdrop,
