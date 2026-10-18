@@ -1917,10 +1917,34 @@ local function main()
 			BorderSizePixel = 0,
 			Parent = bar,
 		})
+		-- brand mark: a rounded accent tile with the initial
+		local mark = new("Frame", {
+			Size = UDim2.fromOffset(34, 34),
+			Position = UDim2.fromOffset(14, (BAR - 34) / 2),
+			BackgroundColor3 = C.accent,
+			BorderSizePixel = 0,
+			Parent = bar,
+		})
+		round(mark, 9)
+		new("UIGradient", {
+			Color = ColorSequence.new(Color3.fromRGB(235, 240, 252), Color3.fromRGB(150, 158, 182)),
+			Rotation = 90,
+			Parent = mark,
+		})
 		new("TextLabel", {
-			Text = "Logger Panel",
-			Size = UDim2.new(1, -60, 1, 0),
-			Position = UDim2.fromOffset(14, 0),
+			Text = "V",
+			Size = UDim2.fromScale(1, 1),
+			BackgroundTransparency = 1,
+			Font = Enum.Font.GothamBold,
+			TextSize = 18,
+			TextColor3 = Color3.fromRGB(14, 14, 20),
+			Parent = mark,
+		})
+		-- title + subtitle
+		new("TextLabel", {
+			Text = "VENTA",
+			Size = UDim2.new(1, -112, 0, 18),
+			Position = UDim2.fromOffset(58, 9),
 			BackgroundTransparency = 1,
 			Font = Enum.Font.GothamBold,
 			TextSize = 16,
@@ -1928,17 +1952,39 @@ local function main()
 			TextXAlignment = Enum.TextXAlignment.Left,
 			Parent = bar,
 		})
+		new("TextLabel", {
+			Text = "Logger  -  " .. PRODUCT_NAMES[PRODUCT],
+			Size = UDim2.new(1, -112, 0, 14),
+			Position = UDim2.fromOffset(58, 28),
+			BackgroundTransparency = 1,
+			Font = Enum.Font.Gotham,
+			TextSize = 11,
+			TextColor3 = C.subtext,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			Parent = bar,
+		})
+		-- thin accent line along the bottom of the header
+		new("Frame", {
+			Size = UDim2.new(1, 0, 0, 1),
+			Position = UDim2.new(0, 0, 1, -1),
+			BackgroundColor3 = C.accent,
+			BackgroundTransparency = 0.55,
+			BorderSizePixel = 0,
+			Parent = bar,
+		})
 		local hideBtn = new("TextButton", {
 			Text = "X",
-			Size = UDim2.fromOffset(28, 28),
-			Position = UDim2.new(1, -36, 0, 8),
+			Size = UDim2.fromOffset(30, 30),
+			Position = UDim2.new(1, -40, 0.5, -15),
 			BackgroundColor3 = C.row,
+			AutoButtonColor = false,
 			Font = Enum.Font.GothamBold,
-			TextSize = 16,
+			TextSize = 15,
 			TextColor3 = C.subtext,
 			Parent = bar,
 		})
-		round(hideBtn, 8)
+		round(hideBtn, 9)
+		new("UIStroke", { Color = C.stroke, Thickness = 1, Transparency = 0.4, Parent = hideBtn })
 
 		-- the body scrolls, so everything is still reachable when the window is made small
 		local body = new("ScrollingFrame", {
