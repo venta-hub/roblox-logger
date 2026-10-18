@@ -1987,8 +1987,9 @@ local function main()
 		new("UIStroke", { Color = C.stroke, Thickness = 1, Transparency = 0.4, Parent = hideBtn })
 
 		-- the body scrolls, so everything is still reachable when the window is made small
+		local FOOTER = 30
 		local body = new("ScrollingFrame", {
-			Size = UDim2.new(1, 0, 1, -BAR),
+			Size = UDim2.new(1, 0, 1, -(BAR + FOOTER)),
 			Position = UDim2.fromOffset(0, BAR),
 			BackgroundTransparency = 1,
 			BorderSizePixel = 0,
@@ -2005,6 +2006,65 @@ local function main()
 			PaddingTop = UDim.new(0, 18),
 			PaddingBottom = UDim.new(0, 34),
 			Parent = body,
+		})
+
+		-- footer: brand, status dot and version, with an accent line across the top
+		local footer = new("Frame", {
+			Size = UDim2.new(1, 0, 0, FOOTER),
+			Position = UDim2.new(0, 0, 1, -FOOTER),
+			BackgroundColor3 = C.panel,
+			BorderSizePixel = 0,
+			ZIndex = 2,
+			Parent = frame,
+		})
+		round(footer, 14)
+		new("Frame", { -- square off the footer's top corners
+			Size = UDim2.new(1, 0, 0, 14),
+			BackgroundColor3 = C.panel,
+			BorderSizePixel = 0,
+			ZIndex = 2,
+			Parent = footer,
+		})
+		new("Frame", { -- accent line across the top of the footer
+			Size = UDim2.new(1, 0, 0, 1),
+			BackgroundColor3 = C.accent,
+			BackgroundTransparency = 0.6,
+			BorderSizePixel = 0,
+			ZIndex = 3,
+			Parent = footer,
+		})
+		local dot = new("Frame", {
+			Size = UDim2.fromOffset(7, 7),
+			Position = UDim2.new(0, 16, 0.5, -3),
+			BackgroundColor3 = C.on,
+			BorderSizePixel = 0,
+			ZIndex = 3,
+			Parent = footer,
+		})
+		round(dot, 4)
+		new("TextLabel", {
+			Text = "venta  -  connected",
+			Size = UDim2.new(0.7, 0, 1, 0),
+			Position = UDim2.fromOffset(30, 0),
+			BackgroundTransparency = 1,
+			Font = Enum.Font.Gotham,
+			TextSize = 11,
+			TextColor3 = C.subtext,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			ZIndex = 3,
+			Parent = footer,
+		})
+		new("TextLabel", {
+			Text = "v29",
+			Size = UDim2.new(0, 60, 1, 0),
+			Position = UDim2.new(1, -74, 0, 0),
+			BackgroundTransparency = 1,
+			Font = Enum.Font.GothamBold,
+			TextSize = 11,
+			TextColor3 = C.accent,
+			TextXAlignment = Enum.TextXAlignment.Right,
+			ZIndex = 3,
+			Parent = footer,
 		})
 
 		local order = 0
