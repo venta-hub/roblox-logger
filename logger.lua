@@ -1908,6 +1908,45 @@ local function main()
 			end
 			waterLayer(92, 13, 1, 0.35, Color3.fromRGB(32, 38, 52))
 			waterLayer(107, 19, -1, 0.5, Color3.fromRGB(24, 30, 44))
+			-- The REAL water photo, shown for everyone: downloaded from the repo into the executor's
+			-- folder once, then loaded locally (getcustomasset), which bypasses Roblox asset
+			-- permissions. If an executor can't do this, the procedural water above stays instead.
+			local water = new("ImageLabel", {
+				Size = UDim2.fromScale(1.14, 1.14),
+				Position = UDim2.fromScale(-0.07, -0.08),
+				BackgroundTransparency = 1,
+				ImageTransparency = 1,
+				ScaleType = Enum.ScaleType.Crop,
+				ZIndex = 0,
+				Parent = backdrop,
+			})
+			TweenService:Create(water, TweenInfo.new(20, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {
+				Position = UDim2.fromScale(-0.03, -0.02),
+			}):Play()
+			-- light veil so panel text stays legible over the photo
+			new("Frame", {
+				Size = UDim2.fromScale(1, 1),
+				BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+				BackgroundTransparency = 0.35,
+				BorderSizePixel = 0,
+				ZIndex = 0,
+				Parent = backdrop,
+			})
+			task.spawn(function()
+				local ok, asset = pcall(function()
+					local loadAsset = getcustomasset or getsynasset or (syn and syn.getcustomasset)
+					if not (writefile and loadAsset) then return nil end
+					local file = "venta_obsidian_water.png"
+					if not (isfile and isfile(file)) then
+						writefile(file, game:HttpGet("https://raw.githubusercontent.com/venta-hub/roblox-logger/main/water.png"))
+					end
+					return loadAsset(file)
+				end)
+				if ok and asset and water and water.Parent then
+					water.Image = asset
+					water.ImageTransparency = 0
+				end
+			end)
 			local function within(v)
 				local p, s = backdrop.AbsolutePosition, backdrop.AbsoluteSize
 				return v.X >= p.X and v.X <= p.X + s.X and v.Y >= p.Y and v.Y <= p.Y + s.Y
