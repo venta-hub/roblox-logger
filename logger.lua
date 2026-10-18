@@ -2074,31 +2074,46 @@ local function main()
 		end
 
 		local function heading(text)
-			-- breathing room above, the title, and a hairline divider below: clean section breaks
+			-- breathing room above, an accent tick + title, and a hairline divider that fades out
 			local holder = new("Frame", {
 				LayoutOrder = nextOrder(),
 				Size = UDim2.new(1, 0, 0, 40),
 				BackgroundTransparency = 1,
 				Parent = body,
 			})
+			local tick = new("Frame", {
+				Size = UDim2.fromOffset(3, 14),
+				Position = UDim2.fromOffset(0, 17),
+				BackgroundColor3 = C.accent,
+				BorderSizePixel = 0,
+				Parent = holder,
+			})
+			round(tick, 2)
 			new("TextLabel", {
 				Text = text,
-				Size = UDim2.new(1, 0, 0, 20),
-				Position = UDim2.fromOffset(0, 14),
+				Size = UDim2.new(1, -14, 0, 20),
+				Position = UDim2.fromOffset(13, 14),
 				BackgroundTransparency = 1,
 				Font = Enum.Font.GothamBold,
 				TextSize = 14,
-				TextColor3 = C.accent,
+				TextColor3 = C.text,
 				TextXAlignment = Enum.TextXAlignment.Left,
 				Parent = holder,
 			})
-			new("Frame", {
+			local divider = new("Frame", {
 				Size = UDim2.new(1, 0, 0, 1),
 				Position = UDim2.new(0, 0, 1, -1),
 				BackgroundColor3 = C.stroke,
-				BackgroundTransparency = 0.45,
 				BorderSizePixel = 0,
 				Parent = holder,
+			})
+			new("UIGradient", {
+				Transparency = NumberSequence.new({
+					NumberSequenceKeypoint.new(0, 0.2),
+					NumberSequenceKeypoint.new(0.65, 0.55),
+					NumberSequenceKeypoint.new(1, 1),
+				}),
+				Parent = divider,
 			})
 		end
 
@@ -2161,10 +2176,11 @@ local function main()
 				Parent = parent,
 			})
 			round(back, 11)
+			new("UIStroke", { Color = C.stroke, Thickness = 1, Transparency = 0.35, Parent = back })
 			local knob = new("Frame", {
 				Size = UDim2.fromOffset(18, 18),
 				Position = UDim2.fromOffset(value and 24 or 2, 2),
-				BackgroundColor3 = Color3.new(1, 1, 1),
+				BackgroundColor3 = Color3.fromRGB(245, 247, 252),
 				Parent = back,
 			})
 			round(knob, 9)
