@@ -1840,6 +1840,7 @@ local function main()
 			Size = UDim2.fromOffset(W, H),
 			Position = UDim2.new(0, 24, 0.5, -H / 2),
 			BackgroundColor3 = C.bg,
+			BackgroundTransparency = 1, -- the wave backdrop below is the real fill, so it isn't hidden
 			ClipsDescendants = true,
 			Parent = gui,
 		})
@@ -1856,6 +1857,7 @@ local function main()
 				ClipsDescendants = true,
 				Parent = frame,
 			})
+			round(backdrop, 14) -- match the frame's rounded corners
 			-- broad soft horizontal streaks of cold light on black = obsidian water sheen,
 			-- big enough to actually see; they bob and drift so the water looks alive
 			local SHEEN = ColorSequence.new(Color3.fromRGB(255, 255, 255), Color3.fromRGB(110, 122, 150))
