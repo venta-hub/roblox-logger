@@ -157,6 +157,50 @@ local function main()
 	end
 	local function round(obj, r) new("UICorner", { CornerRadius = UDim.new(0, r), Parent = obj }) end
 
+	-- Gives one button a high-end hover/press feel: a soft glow outline that fades in, and a
+	-- springy scale "pop". The pop is skipped for buttons inside a list so it never nudges layout.
+	local function hookButton(btn)
+		if btn:GetAttribute("fxHooked") then return end
+		btn:SetAttribute("fxHooked", true)
+		local glow = new("UIStroke", {
+			Color = Color3.fromRGB(175, 190, 225),
+			Thickness = 0,
+			Transparency = 0.1,
+			ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+			Parent = btn,
+		})
+		local scale
+		if not (btn.Parent and btn.Parent:FindFirstChildOfClass("UIListLayout")) then
+			scale = new("UIScale", { Parent = btn })
+		end
+		local hovering = false
+		local function pop(s, style)
+			if not scale then return end
+			TweenService:Create(scale, TweenInfo.new(0.16, style or Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = s }):Play()
+		end
+		btn.MouseEnter:Connect(function()
+			hovering = true
+			TweenService:Create(glow, TweenInfo.new(0.14), { Thickness = 1.6 }):Play()
+			pop(1.06)
+		end)
+		btn.MouseLeave:Connect(function()
+			hovering = false
+			TweenService:Create(glow, TweenInfo.new(0.18), { Thickness = 0 }):Play()
+			pop(1, Enum.EasingStyle.Quad)
+		end)
+		btn.MouseButton1Down:Connect(function() pop(0.94, Enum.EasingStyle.Quad) end)
+		btn.MouseButton1Up:Connect(function() pop(hovering and 1.06 or 1) end)
+	end
+	-- Hooks every button already in a window, and any added later (list rows, dropdowns, etc.).
+	local function applyHoverFX(root)
+		for _, obj in ipairs(root:GetDescendants()) do
+			if obj:IsA("TextButton") or obj:IsA("ImageButton") then hookButton(obj) end
+		end
+		root.DescendantAdded:Connect(function(obj)
+			if obj:IsA("TextButton") or obj:IsA("ImageButton") then task.defer(hookButton, obj) end
+		end)
+	end
+
 	-- makes a ScreenGui, replacing one with the same name left over from an earlier run
 	local function makeGui(name)
 		local gui = Instance.new("ScreenGui")
@@ -167,6 +211,7 @@ local function main()
 		for _, old in ipairs(gui.Parent:GetChildren()) do
 			if old ~= gui and old.Name == name then old:Destroy() end
 		end
+		applyHoverFX(gui) -- every window gets interactive buttons automatically
 		return gui
 	end
 
