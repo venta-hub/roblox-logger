@@ -1820,6 +1820,9 @@ local function main()
 	-- Only keys that include the logger get this panel (credits-only keys just get Player Credits).
 	if HAS_LOGGER then
 		local UserInputService = game:GetService("UserInputService")
+		-- PC keeps normal mode; phones/tablets (touch, no keyboard) get a fitted panel and an
+		-- on-screen open button (since the panel keybind can't work without a keyboard)
+		local isMobile = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
 		local MIN_W, MIN_H, MAX_W, MAX_H = 300, 160, 900, 900
 		local W, H, BAR = 484, 560, 54
 		local C = {
@@ -1846,6 +1849,14 @@ local function main()
 		})
 		round(frame, 14)
 		new("UIStroke", { Color = C.stroke, Thickness = 1.5, Parent = frame })
+		-- on mobile, shrink the panel to fit the screen and center it
+		if isMobile then
+			local vp = (workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize) or Vector2.new(400, 700)
+			local s = math.clamp(math.min((vp.X - 20) / W, (vp.Y - 120) / H), 0.45, 1)
+			new("UIScale", { Scale = s, Parent = frame })
+			frame.AnchorPoint = Vector2.new(0.5, 0.5)
+			frame.Position = UDim2.fromScale(0.5, 0.5)
+		end
 
 		-- simple animated obsidian-wave backdrop: two gradient layers drifting at different speeds,
 		-- nothing mouse-reactive
@@ -2172,7 +2183,7 @@ local function main()
 		end
 
 		---------------- free camera: on/off toggle and the key that toggles it
-		if HAS_FLY then -- only bundle keys include the free camera
+		if HAS_FLY and not isMobile then -- bundle keys only, and PC only (fly needs a keyboard)
 			heading("FREE CAMERA")
 			local flyRow = new("Frame", {
 				LayoutOrder = nextOrder(),
@@ -3114,6 +3125,8 @@ local function main()
 		end
 
 		---------------- keybinds: click a key button, then press the key you want (Esc cancels)
+		-- keybinds are keyboard-only, so PC players only
+		if not isMobile then
 		heading("KEYBINDS")
 		-- only the keybinds for parts this key unlocks are shown
 		local KEYBIND_ROWS = {}
@@ -3189,6 +3202,7 @@ local function main()
 			end)
 		end
 		for _, bind in ipairs(KEYBIND_ROWS) do keybindRow(bind) end
+		end -- not isMobile (keybinds)
 
 		---------------- terminate: stops everything and removes all windows (run the loadstring to relaunch)
 		heading("SCRIPT")
@@ -3281,6 +3295,43 @@ local function main()
 				frame.Visible = not frame.Visible
 			end
 		end))
+
+		-- mobile has no keyboard, so add a draggable on-screen button to open/close the panel
+		if isMobile then
+			local openBtn = new("TextButton", {
+				Size = UDim2.fromOffset(60, 60),
+				Position = UDim2.new(0, 14, 0, 150),
+				BackgroundColor3 = C.panel,
+				AutoButtonColor = false,
+				Text = "LOG",
+				Font = Enum.Font.GothamBold,
+				TextSize = 15,
+				TextColor3 = C.accent,
+				Parent = gui,
+			})
+			round(openBtn, 16)
+			new("UIStroke", { Color = C.stroke, Thickness = 1.5, Parent = openBtn })
+			local drag, startP, startPos, moved
+			openBtn.InputBegan:Connect(function(input)
+				if input.UserInputType == Enum.UserInputType.Touch then
+					drag, startP, startPos, moved = true, input.Position, openBtn.Position, false
+				end
+			end)
+			track(UserInputService.InputChanged:Connect(function(input)
+				if drag and input.UserInputType == Enum.UserInputType.Touch then
+					local d = input.Position - startP
+					if d.Magnitude > 6 then moved = true end
+					openBtn.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X, startPos.Y.Scale, startPos.Y.Offset + d.Y)
+				end
+			end))
+			track(UserInputService.InputEnded:Connect(function(input)
+				if input.UserInputType == Enum.UserInputType.Touch then drag = false end
+			end))
+			-- a tap (not a drag) toggles the panel
+			openBtn.MouseButton1Click:Connect(function()
+				if not moved then frame.Visible = not frame.Visible end
+			end)
+		end
 
 		-- terminating, re-executing or losing the key removes the panel
 		onStop(function() gui:Destroy() end)
