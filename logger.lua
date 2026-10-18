@@ -1893,56 +1893,23 @@ local function main()
 			TweenService:Create(water, TweenInfo.new(18, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {
 				Position = UDim2.fromScale(-0.04, -0.03),
 			}):Play()
-			-- a faint dark veil so panel text stays readable over the photo
+			-- only a whisper of a veil so the real water texture reads but text stays legible
 			new("Frame", {
 				Size = UDim2.fromScale(1, 1),
 				BackgroundColor3 = Color3.fromRGB(0, 0, 0),
-				BackgroundTransparency = 0.55,
+				BackgroundTransparency = 0.78,
 				BorderSizePixel = 0,
 				ZIndex = 0,
 				Parent = backdrop,
 			})
-			-- soft radial light that tracks the cursor: stacked faint circles give a gentle falloff
-			-- instead of one hard-edged disc
-			local glow = new("Frame", {
-				Size = UDim2.fromOffset(0, 0),
-				AnchorPoint = Vector2.new(0.5, 0.5),
-				BackgroundTransparency = 1,
-				Visible = false,
-				ZIndex = 0,
-				Parent = backdrop,
-			})
-			for _, layer in ipairs({ { 60, 0.9 }, { 100, 0.94 }, { 146, 0.97 }, { 196, 0.99 } }) do
-				local c = new("Frame", {
-					Size = UDim2.fromOffset(layer[1], layer[1]),
-					AnchorPoint = Vector2.new(0.5, 0.5),
-					Position = UDim2.fromScale(0.5, 0.5),
-					BackgroundColor3 = Color3.fromRGB(150, 185, 255),
-					BackgroundTransparency = layer[2],
-					BorderSizePixel = 0,
-					ZIndex = 0,
-					Parent = glow,
-				})
-				new("UICorner", { CornerRadius = UDim.new(1, 0), Parent = c })
-			end
 			local function within(v)
 				local p, s = backdrop.AbsolutePosition, backdrop.AbsoluteSize
 				return v.X >= p.X and v.X <= p.X + s.X and v.Y >= p.Y and v.Y <= p.Y + s.Y
 			end
-			track(RunService.RenderStepped:Connect(function()
-				if not alive then return end
-				local m = UIS:GetMouseLocation() - guiInset
-				if within(m) then
-					glow.Visible = true
-					glow.Position = UDim2.fromOffset(m.X - backdrop.AbsolutePosition.X, m.Y - backdrop.AbsolutePosition.Y)
-				else
-					glow.Visible = false
-				end
-			end))
-			-- expanding ring where you click
-			local function ripple(cx, cy)
+			-- one expanding, fading ring = a disturbance spreading across the water
+			local function spawnRipple(cx, cy, maxSize, life, thick, alpha)
 				local ring = new("Frame", {
-					Size = UDim2.fromOffset(12, 12),
+					Size = UDim2.fromOffset(10, 10),
 					Position = UDim2.fromOffset(cx, cy),
 					AnchorPoint = Vector2.new(0.5, 0.5),
 					BackgroundTransparency = 1,
@@ -1951,16 +1918,38 @@ local function main()
 					Parent = backdrop,
 				})
 				new("UICorner", { CornerRadius = UDim.new(1, 0), Parent = ring })
-				local rs = new("UIStroke", { Color = Color3.fromRGB(205, 220, 255), Thickness = 2.5, Transparency = 0.15, Parent = ring })
-				TweenService:Create(ring, TweenInfo.new(0.75, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Size = UDim2.fromOffset(230, 230) }):Play()
-				local ft = TweenService:Create(rs, TweenInfo.new(0.75, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Transparency = 1, Thickness = 0 })
+				local rs = new("UIStroke", { Color = Color3.fromRGB(190, 210, 245), Thickness = thick, Transparency = alpha, Parent = ring })
+				TweenService:Create(ring, TweenInfo.new(life, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+					Size = UDim2.fromOffset(maxSize, maxSize),
+				}):Play()
+				local ft = TweenService:Create(rs, TweenInfo.new(life, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+					Transparency = 1, Thickness = 0,
+				})
 				ft:Play()
 				ft.Completed:Connect(function() ring:Destroy() end)
 			end
+			-- as the cursor moves it leaves a trail of ripples, like something gliding through water
+			local lastPos
+			track(RunService.RenderStepped:Connect(function()
+				if not alive then return end
+				local m = UIS:GetMouseLocation() - guiInset
+				if not within(m) then lastPos = nil return end
+				local lx, ly = m.X - backdrop.AbsolutePosition.X, m.Y - backdrop.AbsolutePosition.Y
+				local p = Vector2.new(lx, ly)
+				if not lastPos or (p - lastPos).Magnitude > 20 then
+					lastPos = p
+					spawnRipple(lx, ly, 80, 0.9, 1.5, 0.4)
+				end
+			end))
+			-- a bigger, layered splash where you click, like dropping a ball in
 			track(UIS.InputBegan:Connect(function(input)
 				if not alive or input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
 				local m = UIS:GetMouseLocation() - guiInset
-				if within(m) then ripple(m.X - backdrop.AbsolutePosition.X, m.Y - backdrop.AbsolutePosition.Y) end
+				if within(m) then
+					local lx, ly = m.X - backdrop.AbsolutePosition.X, m.Y - backdrop.AbsolutePosition.Y
+					spawnRipple(lx, ly, 250, 0.85, 3, 0.1)
+					spawnRipple(lx, ly, 150, 0.6, 2, 0.25)
+				end
 			end))
 		end
 
