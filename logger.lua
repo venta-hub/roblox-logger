@@ -1821,7 +1821,7 @@ local function main()
 	if HAS_LOGGER then
 		local UserInputService = game:GetService("UserInputService")
 		local MIN_W, MIN_H, MAX_W, MAX_H = 300, 160, 900, 900
-		local W, H, BAR = 420, 480, 44
+		local W, H, BAR = 484, 560, 54
 		local C = {
 			bg = Color3.fromRGB(6, 6, 9),
 			panel = Color3.fromRGB(14, 14, 18),
@@ -1935,12 +1935,12 @@ local function main()
 			CanvasSize = UDim2.new(),
 			Parent = frame,
 		})
-		new("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 8), Parent = body })
+		new("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 16), Parent = body })
 		new("UIPadding", {
-			PaddingLeft = UDim.new(0, 14),
-			PaddingRight = UDim.new(0, 14),
-			PaddingTop = UDim.new(0, 10),
-			PaddingBottom = UDim.new(0, 26),
+			PaddingLeft = UDim.new(0, 24),
+			PaddingRight = UDim.new(0, 24),
+			PaddingTop = UDim.new(0, 18),
+			PaddingBottom = UDim.new(0, 34),
 			Parent = body,
 		})
 
@@ -1951,16 +1951,31 @@ local function main()
 		end
 
 		local function heading(text)
+			-- breathing room above, the title, and a hairline divider below: clean section breaks
+			local holder = new("Frame", {
+				LayoutOrder = nextOrder(),
+				Size = UDim2.new(1, 0, 0, 40),
+				BackgroundTransparency = 1,
+				Parent = body,
+			})
 			new("TextLabel", {
 				Text = text,
-				LayoutOrder = nextOrder(),
-				Size = UDim2.new(1, 0, 0, 22),
+				Size = UDim2.new(1, 0, 0, 20),
+				Position = UDim2.fromOffset(0, 14),
 				BackgroundTransparency = 1,
 				Font = Enum.Font.GothamBold,
-				TextSize = 15,
+				TextSize = 14,
 				TextColor3 = C.accent,
 				TextXAlignment = Enum.TextXAlignment.Left,
-				Parent = body,
+				Parent = holder,
+			})
+			new("Frame", {
+				Size = UDim2.new(1, 0, 0, 1),
+				Position = UDim2.new(0, 0, 1, -1),
+				BackgroundColor3 = C.stroke,
+				BackgroundTransparency = 0.45,
+				BorderSizePixel = 0,
+				Parent = holder,
 			})
 		end
 
