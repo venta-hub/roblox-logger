@@ -1855,20 +1855,37 @@ local function main()
 			local guiInset = game:GetService("GuiService"):GetGuiInset()
 			local backdrop = new("Frame", {
 				Size = UDim2.fromScale(1, 1),
-				BackgroundColor3 = Color3.fromRGB(3, 3, 5),
+				BackgroundColor3 = Color3.fromRGB(255, 255, 255),
 				BorderSizePixel = 0,
 				ZIndex = 0,
 				ClipsDescendants = true,
 				Parent = frame,
 			})
 			round(backdrop, 14)
-			-- the uploaded water photo, a touch oversized so it can drift without showing edges
+			-- animated dark water gradient: the base layer, and a graceful fallback if the photo
+			-- can't load (e.g. the number is a Decal id rather than the underlying Image id)
+			local baseGrad = new("UIGradient", {
+				Rotation = 100,
+				Color = ColorSequence.new({
+					ColorSequenceKeypoint.new(0.00, Color3.fromRGB(6, 7, 10)),
+					ColorSequenceKeypoint.new(0.22, Color3.fromRGB(21, 25, 34)),
+					ColorSequenceKeypoint.new(0.46, Color3.fromRGB(6, 7, 10)),
+					ColorSequenceKeypoint.new(0.68, Color3.fromRGB(18, 22, 31)),
+					ColorSequenceKeypoint.new(0.88, Color3.fromRGB(24, 28, 38)),
+					ColorSequenceKeypoint.new(1.00, Color3.fromRGB(6, 7, 10)),
+				}),
+				Parent = backdrop,
+			})
+			TweenService:Create(baseGrad, TweenInfo.new(14, Enum.EasingStyle.Linear, Enum.EasingDirection.Out, -1), {
+				Offset = Vector2.new(0, 1),
+			}):Play()
+			-- the uploaded water photo on top; shows once it loads. Oversized so it can drift.
 			local water = new("ImageLabel", {
 				Size = UDim2.fromScale(1.18, 1.18),
 				Position = UDim2.fromScale(-0.09, -0.1),
-				BackgroundColor3 = Color3.fromRGB(3, 3, 5),
 				BackgroundTransparency = 1,
-				Image = "rbxassetid://96596032989374",
+				-- rbxthumb renders a decal's picture directly, so no Image-id hunting needed
+				Image = "rbxthumb://type=Asset&id=96596032989374&w=720&h=720",
 				ScaleType = Enum.ScaleType.Crop,
 				ZIndex = 0,
 				Parent = backdrop,
@@ -1885,18 +1902,29 @@ local function main()
 				ZIndex = 0,
 				Parent = backdrop,
 			})
-			-- soft light disc that tracks the cursor across the water
+			-- soft radial light that tracks the cursor: stacked faint circles give a gentle falloff
+			-- instead of one hard-edged disc
 			local glow = new("Frame", {
-				Size = UDim2.fromOffset(230, 230),
+				Size = UDim2.fromOffset(0, 0),
 				AnchorPoint = Vector2.new(0.5, 0.5),
-				BackgroundColor3 = Color3.fromRGB(170, 200, 255),
-				BackgroundTransparency = 0.88,
-				BorderSizePixel = 0,
+				BackgroundTransparency = 1,
 				Visible = false,
 				ZIndex = 0,
 				Parent = backdrop,
 			})
-			new("UICorner", { CornerRadius = UDim.new(1, 0), Parent = glow })
+			for _, layer in ipairs({ { 60, 0.9 }, { 100, 0.94 }, { 146, 0.97 }, { 196, 0.99 } }) do
+				local c = new("Frame", {
+					Size = UDim2.fromOffset(layer[1], layer[1]),
+					AnchorPoint = Vector2.new(0.5, 0.5),
+					Position = UDim2.fromScale(0.5, 0.5),
+					BackgroundColor3 = Color3.fromRGB(150, 185, 255),
+					BackgroundTransparency = layer[2],
+					BorderSizePixel = 0,
+					ZIndex = 0,
+					Parent = glow,
+				})
+				new("UICorner", { CornerRadius = UDim.new(1, 0), Parent = c })
+			end
 			local function within(v)
 				local p, s = backdrop.AbsolutePosition, backdrop.AbsoluteSize
 				return v.X >= p.X and v.X <= p.X + s.X and v.Y >= p.Y and v.Y <= p.Y + s.Y
