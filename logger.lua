@@ -3455,6 +3455,25 @@ local function main()
 			end)
 		end
 
+		-- premium finish: every text field gets a subtle outline that lights up accent while focused
+		for _, obj in ipairs(body:GetDescendants()) do
+			if obj:IsA("TextBox") then
+				local s = new("UIStroke", {
+					Color = C.stroke,
+					Thickness = 1,
+					Transparency = 0.5,
+					ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+					Parent = obj,
+				})
+				obj.Focused:Connect(function()
+					TweenService:Create(s, TweenInfo.new(0.15), { Color = C.accent, Transparency = 0.05 }):Play()
+				end)
+				obj.FocusLost:Connect(function()
+					TweenService:Create(s, TweenInfo.new(0.15), { Color = C.stroke, Transparency = 0.5 }):Play()
+				end)
+			end
+		end
+
 		-- terminating, re-executing or losing the key removes the panel
 		onStop(function() gui:Destroy() end)
 		print("[Logger] Logger Panel open. " .. settings.panelKey .. " hides/shows it.")
