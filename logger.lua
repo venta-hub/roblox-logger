@@ -1847,49 +1847,56 @@ local function main()
 		round(frame, 14)
 		new("UIStroke", { Color = C.stroke, Thickness = 1.5, Parent = frame })
 
-		-- animated obsidian water-wave backdrop: dark layers that drift and bob like moving water
+		-- animated obsidian water backdrop. The wave bands are drawn as a gradient directly ON the
+		-- backdrop's own fill (not as child frames), so they render wherever the backdrop does -- no
+		-- GUI z-order quirks can hide them. Two gradient layers drift at different speeds = flowing water.
 		do
 			local backdrop = new("Frame", {
 				Size = UDim2.fromScale(1, 1),
-				BackgroundColor3 = Color3.fromRGB(5, 5, 8),
+				BackgroundColor3 = Color3.fromRGB(255, 255, 255), -- white base; the gradient colors it
 				BorderSizePixel = 0,
 				ZIndex = 0,
-				ClipsDescendants = true,
 				Parent = frame,
 			})
-			round(backdrop, 14) -- match the frame's rounded corners
-			-- broad soft horizontal streaks of cold light on black = obsidian water sheen,
-			-- big enough to actually see; they bob and drift so the water looks alive
-			local SHEEN = ColorSequence.new(Color3.fromRGB(255, 255, 255), Color3.fromRGB(110, 122, 150))
-			for i = 1, 9 do
-				local y = (i - 1) / 9 - 0.02
-				local dir = (i % 2 == 0) and 1 or -1
-				local band = new("Frame", {
-					Size = UDim2.new(1.5, 0, 0, 74),
-					Position = UDim2.new(-0.25, 0, y, 0),
-					BackgroundColor3 = Color3.fromRGB(74, 84, 112),
-					BackgroundTransparency = 0.4,
-					BorderSizePixel = 0,
-					Rotation = -4,
-					ZIndex = 0,
-					Parent = backdrop,
+			round(backdrop, 14)
+			local function waveColors(crest)
+				return ColorSequence.new({
+					ColorSequenceKeypoint.new(0.00, Color3.fromRGB(9, 10, 14)),
+					ColorSequenceKeypoint.new(0.18, crest),
+					ColorSequenceKeypoint.new(0.36, Color3.fromRGB(9, 10, 14)),
+					ColorSequenceKeypoint.new(0.54, crest),
+					ColorSequenceKeypoint.new(0.72, Color3.fromRGB(9, 10, 14)),
+					ColorSequenceKeypoint.new(0.88, crest),
+					ColorSequenceKeypoint.new(1.00, Color3.fromRGB(9, 10, 14)),
 				})
-				-- fade the streak's top and bottom edges so it reads as a soft wave of light
-				new("UIGradient", {
-					Color = SHEEN,
-					Rotation = 90,
-					Transparency = NumberSequence.new({
-						NumberSequenceKeypoint.new(0, 1),
-						NumberSequenceKeypoint.new(0.5, 0.12),
-						NumberSequenceKeypoint.new(1, 1),
-					}),
-					Parent = band,
-				})
-				-- bob up/down and drift sideways, each streak at its own pace, forever
-				TweenService:Create(band, TweenInfo.new(2.6 + i * 0.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {
-					Position = UDim2.new(-0.25 + 0.06 * dir, 0, y + 0.035, 0),
-				}):Play()
 			end
+			local grad = new("UIGradient", {
+				Rotation = 100,
+				Color = waveColors(Color3.fromRGB(36, 42, 58)),
+				Parent = backdrop,
+			})
+			TweenService:Create(grad, TweenInfo.new(11, Enum.EasingStyle.Linear, Enum.EasingDirection.Out, -1), {
+				Offset = Vector2.new(0, 1),
+			}):Play()
+			-- second, fainter layer drifting the other way for depth and motion
+			local layer2 = new("Frame", {
+				Size = UDim2.fromScale(1, 1),
+				BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+				BackgroundTransparency = 0.45,
+				BorderSizePixel = 0,
+				ZIndex = 0,
+				Parent = backdrop,
+			})
+			round(layer2, 14)
+			local grad2 = new("UIGradient", {
+				Rotation = 84,
+				Color = waveColors(Color3.fromRGB(30, 36, 50)),
+				Offset = Vector2.new(0.3, 0),
+				Parent = layer2,
+			})
+			TweenService:Create(grad2, TweenInfo.new(17, Enum.EasingStyle.Linear, Enum.EasingDirection.Out, -1), {
+				Offset = Vector2.new(0.3, -1),
+			}):Play()
 		end
 
 		-- title bar: drag it to move the window
