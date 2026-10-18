@@ -1912,11 +1912,14 @@ local function main()
 			-- folder once, then loaded locally (getcustomasset), which bypasses Roblox asset
 			-- permissions. If an executor can't do this, the procedural water above stays instead.
 			local water = new("ImageLabel", {
-				Size = UDim2.fromScale(1.14, 1.14),
-				Position = UDim2.fromScale(-0.07, -0.08),
+				Size = UDim2.fromScale(1.18, 1.18),
+				Position = UDim2.fromScale(-0.09, -0.09),
 				BackgroundTransparency = 1,
 				ImageTransparency = 1,
-				ScaleType = Enum.ScaleType.Crop,
+				-- Tile zooms the texture out (natural scale, not a blown-up crop) and fills the whole
+				-- panel with more water; keeps the image sharp since it isn't being upscaled.
+				ScaleType = Enum.ScaleType.Tile,
+				TileSize = UDim2.fromOffset(300, 200),
 				ZIndex = 0,
 				Parent = backdrop,
 			})
