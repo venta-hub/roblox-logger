@@ -1867,41 +1867,47 @@ local function main()
 			local baseGrad = new("UIGradient", {
 				Rotation = 100,
 				Color = ColorSequence.new({
-					ColorSequenceKeypoint.new(0.00, Color3.fromRGB(6, 7, 10)),
-					ColorSequenceKeypoint.new(0.22, Color3.fromRGB(21, 25, 34)),
-					ColorSequenceKeypoint.new(0.46, Color3.fromRGB(6, 7, 10)),
-					ColorSequenceKeypoint.new(0.68, Color3.fromRGB(18, 22, 31)),
-					ColorSequenceKeypoint.new(0.88, Color3.fromRGB(24, 28, 38)),
-					ColorSequenceKeypoint.new(1.00, Color3.fromRGB(6, 7, 10)),
+					ColorSequenceKeypoint.new(0.00, Color3.fromRGB(8, 9, 13)),
+					ColorSequenceKeypoint.new(0.22, Color3.fromRGB(30, 36, 50)),
+					ColorSequenceKeypoint.new(0.46, Color3.fromRGB(10, 12, 17)),
+					ColorSequenceKeypoint.new(0.68, Color3.fromRGB(26, 32, 45)),
+					ColorSequenceKeypoint.new(0.88, Color3.fromRGB(34, 40, 55)),
+					ColorSequenceKeypoint.new(1.00, Color3.fromRGB(8, 9, 13)),
 				}),
 				Parent = backdrop,
 			})
 			TweenService:Create(baseGrad, TweenInfo.new(14, Enum.EasingStyle.Linear, Enum.EasingDirection.Out, -1), {
 				Offset = Vector2.new(0, 1),
 			}):Play()
-			-- the uploaded water photo on top; shows once it loads. Oversized so it can drift.
-			local water = new("ImageLabel", {
-				Size = UDim2.fromScale(1.18, 1.18),
-				Position = UDim2.fromScale(-0.09, -0.1),
-				BackgroundTransparency = 1,
-				-- rbxthumb renders a decal's picture directly; 420 is the size this asset has generated
-				Image = "rbxthumb://type=Asset&id=96596032989374&w=420&h=420",
-				ScaleType = Enum.ScaleType.Crop,
-				ZIndex = 0,
-				Parent = backdrop,
-			})
-			TweenService:Create(water, TweenInfo.new(18, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {
-				Position = UDim2.fromScale(-0.04, -0.03),
-			}):Play()
-			-- only a whisper of a veil so the real water texture reads but text stays legible
-			new("Frame", {
-				Size = UDim2.fromScale(1, 1),
-				BackgroundColor3 = Color3.fromRGB(0, 0, 0),
-				BackgroundTransparency = 0.78,
-				BorderSizePixel = 0,
-				ZIndex = 0,
-				Parent = backdrop,
-			})
+			-- extra drifting gradient layers over the base; overlapping at different angles/speeds
+			-- they interfere into a shifting dark texture that reads as moving obsidian water
+			local function waterLayer(rotation, speed, dir, trans, crest)
+				local layer = new("Frame", {
+					Size = UDim2.fromScale(1, 1),
+					BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+					BackgroundTransparency = trans,
+					BorderSizePixel = 0,
+					ZIndex = 0,
+					Parent = backdrop,
+				})
+				round(layer, 14)
+				local g = new("UIGradient", {
+					Rotation = rotation,
+					Color = ColorSequence.new({
+						ColorSequenceKeypoint.new(0.00, Color3.fromRGB(5, 6, 9)),
+						ColorSequenceKeypoint.new(0.25, crest),
+						ColorSequenceKeypoint.new(0.50, Color3.fromRGB(5, 6, 9)),
+						ColorSequenceKeypoint.new(0.75, crest),
+						ColorSequenceKeypoint.new(1.00, Color3.fromRGB(5, 6, 9)),
+					}),
+					Parent = layer,
+				})
+				TweenService:Create(g, TweenInfo.new(speed, Enum.EasingStyle.Linear, Enum.EasingDirection.Out, -1), {
+					Offset = Vector2.new(0, dir),
+				}):Play()
+			end
+			waterLayer(92, 13, 1, 0.35, Color3.fromRGB(32, 38, 52))
+			waterLayer(107, 19, -1, 0.5, Color3.fromRGB(24, 30, 44))
 			local function within(v)
 				local p, s = backdrop.AbsolutePosition, backdrop.AbsoluteSize
 				return v.X >= p.X and v.X <= p.X + s.X and v.Y >= p.Y and v.Y <= p.Y + s.Y
