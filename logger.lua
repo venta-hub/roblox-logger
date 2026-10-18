@@ -1847,56 +1847,93 @@ local function main()
 		round(frame, 14)
 		new("UIStroke", { Color = C.stroke, Thickness = 1.5, Parent = frame })
 
-		-- animated obsidian water backdrop. The wave bands are drawn as a gradient directly ON the
-		-- backdrop's own fill (not as child frames), so they render wherever the backdrop does -- no
-		-- GUI z-order quirks can hide them. Two gradient layers drift at different speeds = flowing water.
+		-- real obsidian water texture that slowly drifts, a soft light that follows the cursor, and
+		-- a ripple that expands from wherever you click: the water reacts to the mouse.
 		do
+			local UIS = game:GetService("UserInputService")
+			local RunService = game:GetService("RunService")
+			local guiInset = game:GetService("GuiService"):GetGuiInset()
 			local backdrop = new("Frame", {
 				Size = UDim2.fromScale(1, 1),
-				BackgroundColor3 = Color3.fromRGB(255, 255, 255), -- white base; the gradient colors it
+				BackgroundColor3 = Color3.fromRGB(3, 3, 5),
 				BorderSizePixel = 0,
 				ZIndex = 0,
+				ClipsDescendants = true,
 				Parent = frame,
 			})
 			round(backdrop, 14)
-			local function waveColors(crest)
-				return ColorSequence.new({
-					ColorSequenceKeypoint.new(0.00, Color3.fromRGB(9, 10, 14)),
-					ColorSequenceKeypoint.new(0.18, crest),
-					ColorSequenceKeypoint.new(0.36, Color3.fromRGB(9, 10, 14)),
-					ColorSequenceKeypoint.new(0.54, crest),
-					ColorSequenceKeypoint.new(0.72, Color3.fromRGB(9, 10, 14)),
-					ColorSequenceKeypoint.new(0.88, crest),
-					ColorSequenceKeypoint.new(1.00, Color3.fromRGB(9, 10, 14)),
-				})
-			end
-			local grad = new("UIGradient", {
-				Rotation = 100,
-				Color = waveColors(Color3.fromRGB(36, 42, 58)),
+			-- the uploaded water photo, a touch oversized so it can drift without showing edges
+			local water = new("ImageLabel", {
+				Size = UDim2.fromScale(1.18, 1.18),
+				Position = UDim2.fromScale(-0.09, -0.1),
+				BackgroundColor3 = Color3.fromRGB(3, 3, 5),
+				BackgroundTransparency = 1,
+				Image = "rbxassetid://96596032989374",
+				ScaleType = Enum.ScaleType.Crop,
+				ZIndex = 0,
 				Parent = backdrop,
 			})
-			TweenService:Create(grad, TweenInfo.new(11, Enum.EasingStyle.Linear, Enum.EasingDirection.Out, -1), {
-				Offset = Vector2.new(0, 1),
+			TweenService:Create(water, TweenInfo.new(18, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {
+				Position = UDim2.fromScale(-0.04, -0.03),
 			}):Play()
-			-- second, fainter layer drifting the other way for depth and motion
-			local layer2 = new("Frame", {
+			-- a faint dark veil so panel text stays readable over the photo
+			new("Frame", {
 				Size = UDim2.fromScale(1, 1),
-				BackgroundColor3 = Color3.fromRGB(255, 255, 255),
-				BackgroundTransparency = 0.45,
+				BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+				BackgroundTransparency = 0.55,
 				BorderSizePixel = 0,
 				ZIndex = 0,
 				Parent = backdrop,
 			})
-			round(layer2, 14)
-			local grad2 = new("UIGradient", {
-				Rotation = 84,
-				Color = waveColors(Color3.fromRGB(30, 36, 50)),
-				Offset = Vector2.new(0.3, 0),
-				Parent = layer2,
+			-- soft light disc that tracks the cursor across the water
+			local glow = new("Frame", {
+				Size = UDim2.fromOffset(230, 230),
+				AnchorPoint = Vector2.new(0.5, 0.5),
+				BackgroundColor3 = Color3.fromRGB(170, 200, 255),
+				BackgroundTransparency = 0.88,
+				BorderSizePixel = 0,
+				Visible = false,
+				ZIndex = 0,
+				Parent = backdrop,
 			})
-			TweenService:Create(grad2, TweenInfo.new(17, Enum.EasingStyle.Linear, Enum.EasingDirection.Out, -1), {
-				Offset = Vector2.new(0.3, -1),
-			}):Play()
+			new("UICorner", { CornerRadius = UDim.new(1, 0), Parent = glow })
+			local function within(v)
+				local p, s = backdrop.AbsolutePosition, backdrop.AbsoluteSize
+				return v.X >= p.X and v.X <= p.X + s.X and v.Y >= p.Y and v.Y <= p.Y + s.Y
+			end
+			track(RunService.RenderStepped:Connect(function()
+				if not alive then return end
+				local m = UIS:GetMouseLocation() - guiInset
+				if within(m) then
+					glow.Visible = true
+					glow.Position = UDim2.fromOffset(m.X - backdrop.AbsolutePosition.X, m.Y - backdrop.AbsolutePosition.Y)
+				else
+					glow.Visible = false
+				end
+			end))
+			-- expanding ring where you click
+			local function ripple(cx, cy)
+				local ring = new("Frame", {
+					Size = UDim2.fromOffset(12, 12),
+					Position = UDim2.fromOffset(cx, cy),
+					AnchorPoint = Vector2.new(0.5, 0.5),
+					BackgroundTransparency = 1,
+					BorderSizePixel = 0,
+					ZIndex = 0,
+					Parent = backdrop,
+				})
+				new("UICorner", { CornerRadius = UDim.new(1, 0), Parent = ring })
+				local rs = new("UIStroke", { Color = Color3.fromRGB(205, 220, 255), Thickness = 2.5, Transparency = 0.15, Parent = ring })
+				TweenService:Create(ring, TweenInfo.new(0.75, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Size = UDim2.fromOffset(230, 230) }):Play()
+				local ft = TweenService:Create(rs, TweenInfo.new(0.75, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Transparency = 1, Thickness = 0 })
+				ft:Play()
+				ft.Completed:Connect(function() ring:Destroy() end)
+			end
+			track(UIS.InputBegan:Connect(function(input)
+				if not alive or input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+				local m = UIS:GetMouseLocation() - guiInset
+				if within(m) then ripple(m.X - backdrop.AbsolutePosition.X, m.Y - backdrop.AbsolutePosition.Y) end
+			end))
 		end
 
 		-- title bar: drag it to move the window
