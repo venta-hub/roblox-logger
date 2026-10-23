@@ -3130,24 +3130,25 @@ local function main()
 				logEmpty.Visible = false
 				for i, b in ipairs(list) do
 					if type(b) == "table" and type(b.name) == "string" then
+						local unbanned = type(b.unbannedAt) == "number"
 						local row = new("Frame", {
 							LayoutOrder = i,
-							Size = UDim2.new(1, 0, 0, 40),
+							Size = UDim2.new(1, 0, 0, 56),
 							BackgroundColor3 = C.row,
 							Parent = logList,
 						})
 						round(row, 7)
-						new("Frame", { -- red stripe marks a ban
-							Size = UDim2.fromOffset(3, 24),
+						new("Frame", { -- status stripe: red = still banned, green = unbanned
+							Size = UDim2.fromOffset(3, 40),
 							Position = UDim2.fromOffset(7, 8),
-							BackgroundColor3 = C.bad,
+							BackgroundColor3 = unbanned and C.on or C.bad,
 							BorderSizePixel = 0,
 							Parent = row,
 						})
 						new("TextLabel", {
 							Text = b.name,
 							Size = UDim2.new(1, -20, 0, 18),
-							Position = UDim2.fromOffset(16, 4),
+							Position = UDim2.fromOffset(16, 5),
 							BackgroundTransparency = 1,
 							Font = Enum.Font.GothamBold,
 							TextSize = 14,
@@ -3157,15 +3158,29 @@ local function main()
 							Parent = row,
 						})
 						new("TextLabel", {
-							Text = "by " .. ((type(b.by) == "string" and b.by ~= "") and b.by or "someone")
+							Text = "Banned by " .. ((type(b.by) == "string" and b.by ~= "") and b.by or "someone")
 								.. " - " .. ago(b.at)
 								.. ((type(b.reason) == "string" and b.reason ~= "") and (" - " .. b.reason) or ""),
 							Size = UDim2.new(1, -20, 0, 13),
-							Position = UDim2.fromOffset(16, 22),
+							Position = UDim2.fromOffset(16, 23),
 							BackgroundTransparency = 1,
 							Font = Enum.Font.Gotham,
 							TextSize = 11,
 							TextColor3 = C.subtext,
+							TextXAlignment = Enum.TextXAlignment.Left,
+							TextTruncate = Enum.TextTruncate.AtEnd,
+							Parent = row,
+						})
+						new("TextLabel", {
+							Text = unbanned
+									and ("Unbanned by " .. ((type(b.unbannedBy) == "string" and b.unbannedBy ~= "") and b.unbannedBy or "someone") .. " - " .. ago(b.unbannedAt))
+								or "Still banned",
+							Size = UDim2.new(1, -20, 0, 13),
+							Position = UDim2.fromOffset(16, 38),
+							BackgroundTransparency = 1,
+							Font = Enum.Font.GothamMedium,
+							TextSize = 11,
+							TextColor3 = unbanned and C.on or C.bad,
 							TextXAlignment = Enum.TextXAlignment.Left,
 							TextTruncate = Enum.TextTruncate.AtEnd,
 							Parent = row,
