@@ -5,6 +5,12 @@
 -- forwards to Discord webhook URLs, so without a valid key nothing gets sent.
 local SERVER_URL = "https://logger.vanta-node-7.workers.dev" -- your Worker URL
 
+-- Only these usernames (your moderators) have their /kick, /ban and /unban chat commands logged.
+-- Case-insensitive. Add or remove names here. Anyone not listed is ignored when they type a command.
+local CHAT_MODERATORS = {
+	"Xylryx",
+}
+
 print("[Logger] Starting...")
 
 -- Re-executing the script stops the copy that's already running, so logs aren't sent twice
@@ -648,21 +654,43 @@ local function main()
 			})
 		end))
 
-		-- log /kick, /ban and /unban typed in chat by ANYONE in the server (the server drops
-		-- duplicates, so several loggers all seeing the same command only log it once)
-		track(TextChatService.MessageReceived:Connect(function(msg)
-			if not msg.TextSource or not msg.Text then return end
-			local cmd, rest = msg.Text:match("^%s*/(%a+)%s+(.+)$")
+		-- Log /kick, /ban and /unban typed in chat, but only from the moderators in CHAT_MODERATORS.
+		-- Listens to BOTH TextChatService (new chat) and Player.Chatted (legacy chat) so it works
+		-- whichever chat system the game uses; the server drops duplicates across loggers.
+		local modSet = {}
+		for _, n in ipairs(CHAT_MODERATORS) do
+			if type(n) == "string" then modSet[(n:gsub("%s", "")):lower()] = true end
+		end
+		local recentCmd = {}
+		local function handleChatCommand(text, senderName, senderDisplay)
+			if type(text) ~= "string" or type(senderName) ~= "string" then return end
+			if not modSet[senderName:lower()] then return end -- moderators only
+			local cmd, rest = text:match("^%s*/(%a+)%s+(.+)$")
 			if not cmd then return end
 			cmd = cmd:lower()
 			if cmd ~= "kick" and cmd ~= "ban" and cmd ~= "unban" then return end
 			local targetName, reason = rest:match("^@?(%S+)%s*(.*)$")
 			if not targetName or targetName == "" then return end
+			-- the same message can arrive via both chat events; skip a repeat on this client
+			local sig = senderName:lower() .. "|" .. cmd .. "|" .. targetName:lower()
+			if recentCmd[sig] and os.clock() - recentCmd[sig] < 3 then return end
+			recentCmd[sig] = os.clock()
+			recordAction(cmd, targetName, reason or "", senderName, senderDisplay or senderName)
+		end
+		track(TextChatService.MessageReceived:Connect(function(msg)
+			if not msg.TextSource then return end
 			local sender = Players:GetPlayerByUserId(msg.TextSource.UserId)
-			local modName = (sender and sender.Name) or msg.TextSource.Name or "?"
-			local modDisplay = (sender and sender.DisplayName) or modName
-			recordAction(cmd, targetName, reason or "", modName, modDisplay)
+			local name = (sender and sender.Name) or msg.TextSource.Name
+			local disp = (sender and sender.DisplayName) or name
+			handleChatCommand(msg.Text, name, disp)
 		end))
+		local function hookChatted(p)
+			track(p.Chatted:Connect(function(message)
+				handleChatCommand(message, p.Name, p.DisplayName)
+			end))
+		end
+		for _, p in ipairs(Players:GetPlayers()) do hookChatted(p) end
+		track(Players.PlayerAdded:Connect(hookChatted))
 
 		task.spawn(function()
 			while alive do
