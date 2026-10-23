@@ -533,6 +533,13 @@ local function main()
 		end)
 	end
 
+	-- the shared moderator set (lowercased username -> true), kept in sync by the Moderators panel
+	-- section. The chat /kick /ban logger only logs commands from names in here.
+	local chatModSet = {}
+	for _, n in ipairs(CHAT_MODERATORS) do
+		if type(n) == "string" then chatModSet[(n:gsub("%s", "")):lower()] = true end
+	end
+
 	-- Avatar headshots: looks up image URLs for any users we don't have yet (one request for all of them)
 	local avatarCache = {}
 	local function fetchAvatars(userIds)
@@ -654,17 +661,14 @@ local function main()
 			})
 		end))
 
-		-- Log /kick, /ban and /unban typed in chat, but only from the moderators in CHAT_MODERATORS.
-		-- Listens to BOTH TextChatService (new chat) and Player.Chatted (legacy chat) so it works
-		-- whichever chat system the game uses; the server drops duplicates across loggers.
-		local modSet = {}
-		for _, n in ipairs(CHAT_MODERATORS) do
-			if type(n) == "string" then modSet[(n:gsub("%s", "")):lower()] = true end
-		end
+		-- Log /kick, /ban and /unban typed in chat, but only from the moderators (chatModSet, managed
+		-- in the Moderators panel section). Listens to BOTH TextChatService (new chat) and
+		-- Player.Chatted (legacy chat) so it works whichever chat system the game uses; the server
+		-- drops duplicates across loggers.
 		local recentCmd = {}
 		local function handleChatCommand(text, senderName, senderDisplay)
 			if type(text) ~= "string" or type(senderName) ~= "string" then return end
-			if not modSet[senderName:lower()] then return end -- moderators only
+			if not chatModSet[senderName:lower()] then return end -- moderators only
 			local cmd, rest = text:match("^%s*/(%a+)%s+(.+)$")
 			if not cmd then return end
 			cmd = cmd:lower()
@@ -2240,6 +2244,231 @@ local function main()
 				onToggle(switch.value)
 			end)
 			return switch
+		end
+
+		---------------- moderators: whose chat /kick, /ban and /unban get logged (shared list)
+		do
+			heading("MODERATORS")
+			local addRow = new("Frame", {
+				LayoutOrder = nextOrder(),
+				Size = UDim2.new(1, 0, 0, 34),
+				BackgroundTransparency = 1,
+				Parent = body,
+			})
+			local modBox = new("TextBox", {
+				Text = "",
+				PlaceholderText = "Moderator username...",
+				PlaceholderColor3 = Color3.fromRGB(110, 110, 125),
+				ClearTextOnFocus = false,
+				ClipsDescendants = true,
+				Size = UDim2.new(1, -78, 1, 0),
+				BackgroundColor3 = C.panel,
+				Font = Enum.Font.Gotham,
+				TextSize = 13,
+				TextColor3 = C.text,
+				TextXAlignment = Enum.TextXAlignment.Left,
+				Parent = addRow,
+			})
+			round(modBox, 8)
+			new("UIPadding", { PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10), Parent = modBox })
+			local addBtn = new("TextButton", {
+				Text = "Add",
+				Size = UDim2.new(0, 70, 1, 0),
+				Position = UDim2.new(1, -70, 0, 0),
+				BackgroundColor3 = C.accent,
+				AutoButtonColor = false,
+				Font = Enum.Font.GothamBold,
+				TextSize = 14,
+				TextColor3 = Color3.fromRGB(14, 14, 20),
+				Parent = addRow,
+			})
+			round(addBtn, 8)
+			local modStatus = new("TextLabel", {
+				Text = "Add your moderators; only their chat /kick, /ban and /unban are logged.",
+				LayoutOrder = nextOrder(),
+				Size = UDim2.new(1, 0, 0, 26),
+				BackgroundTransparency = 1,
+				Font = Enum.Font.Gotham,
+				TextSize = 12,
+				TextWrapped = true,
+				TextColor3 = C.subtext,
+				TextXAlignment = Enum.TextXAlignment.Left,
+				Parent = body,
+			})
+			local modList = new("ScrollingFrame", {
+				LayoutOrder = nextOrder(),
+				Size = UDim2.new(1, 0, 0, 130),
+				BackgroundColor3 = C.panel,
+				BorderSizePixel = 0,
+				ScrollBarThickness = 4,
+				ScrollBarImageColor3 = C.stroke,
+				CanvasSize = UDim2.new(),
+				AutomaticCanvasSize = Enum.AutomaticSize.Y,
+				Parent = body,
+			})
+			round(modList, 9)
+			new("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 4), Parent = modList })
+			new("UIPadding", {
+				PaddingLeft = UDim.new(0, 6),
+				PaddingRight = UDim.new(0, 6),
+				PaddingTop = UDim.new(0, 6),
+				PaddingBottom = UDim.new(0, 6),
+				Parent = modList,
+			})
+			local modEmpty = new("TextLabel", {
+				Text = "No moderators added yet.",
+				Size = UDim2.new(1, 0, 0, 28),
+				BackgroundTransparency = 1,
+				Font = Enum.Font.Gotham,
+				TextSize = 12,
+				TextColor3 = C.subtext,
+				Parent = modList,
+			})
+
+			local allMods = {}
+			local pendingAdd, pendingRemove = {}, {}
+			local renderMods, removeMod
+
+			local function syncChatModSet()
+				for k in pairs(chatModSet) do chatModSet[k] = nil end
+				for _, n in ipairs(allMods) do if type(n) == "string" then chatModSet[n:lower()] = true end end
+			end
+			renderMods = function()
+				for _, c in ipairs(modList:GetChildren()) do
+					if c:IsA("Frame") then c:Destroy() end
+				end
+				if #allMods == 0 then
+					modEmpty.Visible = true
+					return
+				end
+				modEmpty.Visible = false
+				for i, n in ipairs(allMods) do
+					local row = new("Frame", {
+						LayoutOrder = i,
+						Size = UDim2.new(1, 0, 0, 32),
+						BackgroundColor3 = C.row,
+						Parent = modList,
+					})
+					round(row, 7)
+					new("TextLabel", {
+						Text = n,
+						Size = UDim2.new(1, -74, 1, 0),
+						Position = UDim2.fromOffset(12, 0),
+						BackgroundTransparency = 1,
+						Font = Enum.Font.GothamMedium,
+						TextSize = 13,
+						TextColor3 = C.text,
+						TextXAlignment = Enum.TextXAlignment.Left,
+						TextTruncate = Enum.TextTruncate.AtEnd,
+						Parent = row,
+					})
+					local rm = new("TextButton", {
+						Text = "Remove",
+						Size = UDim2.fromOffset(62, 24),
+						Position = UDim2.new(1, -68, 0.5, -12),
+						BackgroundColor3 = Color3.fromRGB(120, 36, 36),
+						AutoButtonColor = false,
+						Font = Enum.Font.GothamBold,
+						TextSize = 12,
+						TextColor3 = C.text,
+						Parent = row,
+					})
+					round(rm, 7)
+					rm.MouseButton1Click:Connect(function() removeMod(n) end)
+				end
+			end
+			local function applyServer(serverList)
+				local map = {}
+				for _, n in ipairs(serverList) do if type(n) == "string" then map[n:lower()] = n end end
+				for k in pairs(pendingAdd) do if map[k] then pendingAdd[k] = nil end end
+				for k in pairs(pendingRemove) do if not map[k] then pendingRemove[k] = nil end end
+				for k, n in pairs(pendingAdd) do map[k] = n end
+				for k in pairs(pendingRemove) do map[k] = nil end
+				allMods = {}
+				for _, n in pairs(map) do table.insert(allMods, n) end
+				table.sort(allMods, function(a, b) return a:lower() < b:lower() end)
+				syncChatModSet()
+				renderMods()
+			end
+			local function pushMod(name, add)
+				task.spawn(function()
+					local status, resp = callServer("/setmod", {
+						key = KEY,
+						userId = Players.LocalPlayer.UserId,
+						session = SESSION,
+						placeId = game.PlaceId,
+						name = name,
+						add = add,
+					})
+					if status == 200 and type(resp) == "table" and type(resp.mods) == "table" then
+						applyServer(resp.mods)
+					end
+				end)
+			end
+			local function addMod()
+				local name = trim(modBox.Text):gsub("^@", "")
+				if name == "" then
+					modStatus.TextColor3 = C.bad
+					modStatus.Text = "Type a username to add."
+					return
+				end
+				modBox.Text = ""
+				local lower = name:lower()
+				pendingRemove[lower] = nil
+				pendingAdd[lower] = name
+				local has = false
+				for _, n in ipairs(allMods) do if n:lower() == lower then has = true end end
+				if not has then table.insert(allMods, name) end
+				table.sort(allMods, function(a, b) return a:lower() < b:lower() end)
+				syncChatModSet()
+				renderMods()
+				modStatus.TextColor3 = C.on
+				modStatus.Text = "Added " .. name .. " as a moderator."
+				pushMod(name, true)
+			end
+			removeMod = function(name)
+				local lower = name:lower()
+				pendingAdd[lower] = nil
+				pendingRemove[lower] = true
+				for i = #allMods, 1, -1 do if allMods[i]:lower() == lower then table.remove(allMods, i) end end
+				syncChatModSet()
+				renderMods()
+				modStatus.TextColor3 = C.subtext
+				modStatus.Text = "Removed " .. name .. "."
+				pushMod(name, false)
+			end
+			addBtn.MouseButton1Click:Connect(addMod)
+			modBox.FocusLost:Connect(function(enter) if enter then addMod() end end)
+
+			renderMods()
+			local seeded = false
+			task.spawn(function()
+				while alive do
+					local status, resp = callServer("/mods", {
+						key = KEY,
+						userId = Players.LocalPlayer.UserId,
+						session = SESSION,
+						placeId = game.PlaceId,
+					})
+					if not alive then break end
+					if status == 200 and type(resp) == "table" and type(resp.mods) == "table" then
+						-- on a brand-new game, seed the shared list with the CHAT_MODERATORS defaults
+						if not seeded then
+							seeded = true
+							if #resp.mods == 0 then
+								for _, n in ipairs(CHAT_MODERATORS) do
+									if type(n) == "string" and trim(n) ~= "" then
+										pendingAdd[n:lower()] = n
+										pushMod(n, true)
+									end
+								end
+							end
+						end
+						applyServer(resp.mods)
+					end
+					task.wait(8)
+				end
+			end)
 		end
 
 		---------------- log channels: a toggle and a webhook box each
