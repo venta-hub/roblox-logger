@@ -2853,6 +2853,12 @@ local function main()
 			end)
 		end
 
+		-- set by the BAN LOG section below; lets an unban update the log instantly (before the poll)
+		local banlogMarkUnbanned
+		-- names just unbanned locally: suppressed from the bans list until the server catches up
+		-- (KV reads can be stale for up to ~60s, which would otherwise re-add the player)
+		local pendingUnban = {}
+
 		---------------- banned members: the shared ban list; click a name then Unban to remove it
 		-- Banning adds to this list for everyone; Unban sends /unban, logs it, and removes the name.
 		do
@@ -3048,14 +3054,24 @@ local function main()
 					banStatus.Text = "Pick a name from the list first."
 					return
 				end
-				local name = selectedName
+				local name, key = selectedName, selected
 				sendChat("/unban " .. name)
 				recordAction("unban", name)
 				banStatus.TextColor3 = C.on
 				banStatus.Text = "Unbanned " .. name .. ". The server acts on it only if you're an admin."
+				-- update the UI immediately; KV can serve a stale list for up to ~60s otherwise
+				pendingUnban[key] = true
+				for i = #allBans, 1, -1 do
+					local b = allBans[i]
+					if type(b) == "table" and type(b.name) == "string" and b.name:lower() == key then
+						table.remove(allBans, i)
+					end
+				end
+				if banlogMarkUnbanned then banlogMarkUnbanned(name, Players.LocalPlayer.DisplayName) end
 				selected, selectedName = nil, nil
 				unbanBtn.BackgroundColor3 = C.off
 				for _, r in pairs(rowByKey) do r.BackgroundColor3 = C.row end
+				applyFilter()
 			end)
 
 			-- poll the shared ban list while the script is alive (every 6s)
@@ -3069,7 +3085,20 @@ local function main()
 					})
 					if not alive then break end
 					if status == 200 and type(resp) == "table" and type(resp.bans) == "table" then
-						allBans = resp.bans
+						-- drop anyone we just unbanned until the server stops listing them (stale KV),
+						-- and clear the pending flag once the server confirms they're gone
+						local present = {}
+						allBans = {}
+						for _, b in ipairs(resp.bans) do
+							if type(b) == "table" and type(b.name) == "string" then
+								local k = b.name:lower()
+								present[k] = true
+								if not pendingUnban[k] then table.insert(allBans, b) end
+							end
+						end
+						for k in pairs(pendingUnban) do
+							if not present[k] then pendingUnban[k] = nil end
+						end
 						applyFilter()
 					end
 					task.wait(6)
@@ -3119,6 +3148,7 @@ local function main()
 				return math.floor(secs / 86400) .. "d ago"
 			end
 
+			local allBanlog = {}
 			local function renderLog(list)
 				for _, child in ipairs(logList:GetChildren()) do
 					if child:IsA("Frame") then child:Destroy() end
@@ -3189,6 +3219,19 @@ local function main()
 				end
 			end
 
+			-- called by the unban button so the log flips to "Unbanned by ..." instantly
+			banlogMarkUnbanned = function(name, byWho)
+				local lower = name:lower()
+				for _, e in ipairs(allBanlog) do
+					if type(e) == "table" and type(e.name) == "string" and e.name:lower() == lower and not e.unbannedAt then
+						e.unbannedBy = byWho
+						e.unbannedAt = os.time()
+						break
+					end
+				end
+				renderLog(allBanlog)
+			end
+
 			task.spawn(function()
 				while alive do
 					local status, resp = callServer("/banlog", {
@@ -3199,7 +3242,15 @@ local function main()
 					})
 					if not alive then break end
 					if status == 200 and type(resp) == "table" and type(resp.banlog) == "table" then
-						renderLog(resp.banlog)
+						allBanlog = resp.banlog
+						-- keep showing "Unbanned" for ones we just unbanned, until the server's copy catches up
+						for _, e in ipairs(allBanlog) do
+							if type(e) == "table" and type(e.name) == "string" and not e.unbannedAt and pendingUnban[e.name:lower()] then
+								e.unbannedBy = Players.LocalPlayer.DisplayName
+								e.unbannedAt = os.time()
+							end
+						end
+						renderLog(allBanlog)
 					end
 					task.wait(8)
 				end
