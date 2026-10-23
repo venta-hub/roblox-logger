@@ -3077,6 +3077,120 @@ local function main()
 			end)
 		end
 
+		---------------- ban log: a permanent history of every ban, kept even after an unban
+		do
+			local addLog = collapsible("BAN LOG")
+			local logList = new("ScrollingFrame", {
+				LayoutOrder = nextOrder(),
+				Size = UDim2.new(1, 0, 0, 160),
+				BackgroundColor3 = C.panel,
+				BorderSizePixel = 0,
+				ScrollBarThickness = 4,
+				ScrollBarImageColor3 = C.stroke,
+				CanvasSize = UDim2.new(),
+				AutomaticCanvasSize = Enum.AutomaticSize.Y,
+				Parent = body,
+			})
+			round(logList, 9)
+			new("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 4), Parent = logList })
+			new("UIPadding", {
+				PaddingLeft = UDim.new(0, 6),
+				PaddingRight = UDim.new(0, 6),
+				PaddingTop = UDim.new(0, 6),
+				PaddingBottom = UDim.new(0, 6),
+				Parent = logList,
+			})
+			local logEmpty = new("TextLabel", {
+				Text = "No bans logged yet.",
+				Size = UDim2.new(1, 0, 0, 28),
+				BackgroundTransparency = 1,
+				Font = Enum.Font.Gotham,
+				TextSize = 12,
+				TextColor3 = C.subtext,
+				Parent = logList,
+			})
+			addLog(logList)
+
+			local function ago(t)
+				local secs = os.time() - (tonumber(t) or os.time())
+				if secs < 60 then return "just now" end
+				if secs < 3600 then return math.floor(secs / 60) .. "m ago" end
+				if secs < 86400 then return math.floor(secs / 3600) .. "h ago" end
+				return math.floor(secs / 86400) .. "d ago"
+			end
+
+			local function renderLog(list)
+				for _, child in ipairs(logList:GetChildren()) do
+					if child:IsA("Frame") then child:Destroy() end
+				end
+				if #list == 0 then
+					logEmpty.Visible = true
+					return
+				end
+				logEmpty.Visible = false
+				for i, b in ipairs(list) do
+					if type(b) == "table" and type(b.name) == "string" then
+						local row = new("Frame", {
+							LayoutOrder = i,
+							Size = UDim2.new(1, 0, 0, 40),
+							BackgroundColor3 = C.row,
+							Parent = logList,
+						})
+						round(row, 7)
+						new("Frame", { -- red stripe marks a ban
+							Size = UDim2.fromOffset(3, 24),
+							Position = UDim2.fromOffset(7, 8),
+							BackgroundColor3 = C.bad,
+							BorderSizePixel = 0,
+							Parent = row,
+						})
+						new("TextLabel", {
+							Text = b.name,
+							Size = UDim2.new(1, -20, 0, 18),
+							Position = UDim2.fromOffset(16, 4),
+							BackgroundTransparency = 1,
+							Font = Enum.Font.GothamBold,
+							TextSize = 14,
+							TextColor3 = C.text,
+							TextXAlignment = Enum.TextXAlignment.Left,
+							TextTruncate = Enum.TextTruncate.AtEnd,
+							Parent = row,
+						})
+						new("TextLabel", {
+							Text = "by " .. ((type(b.by) == "string" and b.by ~= "") and b.by or "someone")
+								.. " - " .. ago(b.at)
+								.. ((type(b.reason) == "string" and b.reason ~= "") and (" - " .. b.reason) or ""),
+							Size = UDim2.new(1, -20, 0, 13),
+							Position = UDim2.fromOffset(16, 22),
+							BackgroundTransparency = 1,
+							Font = Enum.Font.Gotham,
+							TextSize = 11,
+							TextColor3 = C.subtext,
+							TextXAlignment = Enum.TextXAlignment.Left,
+							TextTruncate = Enum.TextTruncate.AtEnd,
+							Parent = row,
+						})
+					end
+				end
+			end
+
+			task.spawn(function()
+				while alive do
+					local status, resp = callServer("/banlog", {
+						key = KEY,
+						userId = Players.LocalPlayer.UserId,
+						session = SESSION,
+						placeId = game.PlaceId,
+					})
+					if not alive then break end
+					if status == 200 and type(resp) == "table" and type(resp.banlog) == "table" then
+						renderLog(resp.banlog)
+					end
+					task.wait(8)
+				end
+			end)
+		end
+
 		---------------- actions feed: kicks, bans and announcements from everyone running the
 		-- logger in this game, pulled from the server's shared feed and refreshed every few seconds.
 		do
