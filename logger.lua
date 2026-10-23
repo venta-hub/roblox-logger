@@ -509,7 +509,7 @@ local function main()
 	-- everyone running the logger in this game sees it in the panel. kind is "kick", "ban" or
 	-- "announcement"; target is the affected player (blank for announcements); text is the message.
 	-- Runs in its own thread so it never blocks the UI, and failures are quiet (the feed is a nicety).
-	local function recordAction(kind, target, text)
+	local function recordAction(kind, target, text, moderator, moderatorDisplay)
 		if not alive or not HAS_LOGGER then return end
 		task.spawn(function()
 			callServer("/action", {
@@ -519,8 +519,8 @@ local function main()
 				placeId = game.PlaceId,
 				game = gameName,
 				kind = kind,
-				moderator = Players.LocalPlayer.Name,
-				moderatorDisplay = Players.LocalPlayer.DisplayName,
+				moderator = moderator or Players.LocalPlayer.Name,
+				moderatorDisplay = moderatorDisplay or Players.LocalPlayer.DisplayName,
 				target = target or "",
 				text = text or "",
 			})
@@ -646,6 +646,22 @@ local function main()
 				text = msg.Text,
 				timestamp = DateTime.now():ToIsoDate(),
 			})
+		end))
+
+		-- log /kick, /ban and /unban typed in chat by ANYONE in the server (the server drops
+		-- duplicates, so several loggers all seeing the same command only log it once)
+		track(TextChatService.MessageReceived:Connect(function(msg)
+			if not msg.TextSource or not msg.Text then return end
+			local cmd, rest = msg.Text:match("^%s*/(%a+)%s+(.+)$")
+			if not cmd then return end
+			cmd = cmd:lower()
+			if cmd ~= "kick" and cmd ~= "ban" and cmd ~= "unban" then return end
+			local targetName, reason = rest:match("^@?(%S+)%s*(.*)$")
+			if not targetName or targetName == "" then return end
+			local sender = Players:GetPlayerByUserId(msg.TextSource.UserId)
+			local modName = (sender and sender.Name) or msg.TextSource.Name or "?"
+			local modDisplay = (sender and sender.DisplayName) or modName
+			recordAction(cmd, targetName, reason or "", modName, modDisplay)
 		end))
 
 		task.spawn(function()
