@@ -1066,14 +1066,15 @@ local function main()
 		})
 
 		local icon = make("TextLabel", {
-			Text = "$",
+			Text = "V",
 			Size = UDim2.fromOffset(36, 36),
-			Position = UDim2.fromOffset(10, 8),
-			BackgroundColor3 = Color3.fromRGB(26, 26, 32),
+			Position = UDim2.fromOffset(10, 9),
+			BackgroundColor3 = THEME.accent,
 			Font = Enum.Font.GothamBold,
 			TextSize = 20,
+			TextColor3 = Color3.fromRGB(14, 14, 20),
 			Parent = bar,
-		}, { corner(10), stroke(THEME.accent, 1, 0.5) })
+		}, { corner(10), make("UIGradient", { Color = ColorSequence.new(Color3.fromRGB(235, 240, 252), Color3.fromRGB(150, 158, 182)), Rotation = 90 }) })
 
 		local title = make("TextLabel", {
 			Text = "Player Credits",
